@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { TwitterApi } from 'twitter-api-v2';
+import { getSession } from '@/lib/session';
 
-// Add your X API credentials here
-const X_API_KEY = process.env.X_API_KEY || 'your_api_key_here';
-const X_API_SECRET = process.env.X_API_SECRET || 'your_api_secret_here';
-const X_ACCESS_TOKEN = process.env.X_ACCESS_TOKEN || 'your_access_token_here';
-const X_ACCESS_TOKEN_SECRET = process.env.X_ACCESS_TOKEN_SECRET || 'your_access_token_secret_here';
+// Twitter OAuth app credentials
+const TWITTER_CONSUMER_KEY = process.env.X_API_KEY;
+const TWITTER_CONSUMER_SECRET = process.env.X_API_SECRET;
 
 export async function POST(request: NextRequest) {
   try {
@@ -19,29 +18,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if we have valid API credentials
-    if (X_API_KEY === 'your_api_key_here' || !X_API_KEY) {
+    // Get session to check for Twitter authentication
+    const session = await getSession();
+    
+    if (!session.twitter?.accessToken || !session.twitter?.accessTokenSecret) {
       return NextResponse.json(
-        { error: 'X API credentials not configured. Please set your Twitter API credentials in the environment variables.' },
+        { error: 'Twitter account not connected. Please connect your Twitter account first.' },
         { status: 401 }
       );
     }
 
-    // Debug: Log credential status (without exposing actual values)
-    console.log('API credentials loaded:', {
-      hasApiKey: !!X_API_KEY,
-      hasApiSecret: !!X_API_SECRET,
-      hasAccessToken: !!X_ACCESS_TOKEN,
-      hasAccessTokenSecret: !!X_ACCESS_TOKEN_SECRET
-    });
+    if (!TWITTER_CONSUMER_KEY || !TWITTER_CONSUMER_SECRET) {
+      return NextResponse.json(
+        { error: 'Twitter OAuth credentials not configured' },
+        { status: 500 }
+      );
+    }
 
     try {
-      // Initialize Twitter client
+      // Initialize Twitter client with session tokens
       const twitterClient = new TwitterApi({
-        appKey: X_API_KEY,
-        appSecret: X_API_SECRET,
-        accessToken: X_ACCESS_TOKEN,
-        accessSecret: X_ACCESS_TOKEN_SECRET,
+        appKey: TWITTER_CONSUMER_KEY,
+        appSecret: TWITTER_CONSUMER_SECRET,
+        accessToken: session.twitter.accessToken,
+        accessSecret: session.twitter.accessTokenSecret,
       });
 
       // Post to X
