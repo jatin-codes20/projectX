@@ -197,6 +197,10 @@ target/
 *.ear
 *.class
 
+# Application properties with secrets
+application.properties
+**/application.properties
+
 # Java
 *.class
 *.log
