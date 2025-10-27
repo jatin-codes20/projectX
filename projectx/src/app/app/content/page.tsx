@@ -25,6 +25,11 @@ export default function ContentCreation() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isPosting, setIsPosting] = useState(false);
   const [message, setMessage] = useState('');
+  
+  // Scheduling states
+  const [postMode, setPostMode] = useState<'now' | 'schedule'>('now');
+  const [scheduledTime, setScheduledTime] = useState('');
+  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(['X (Twitter)']);
 
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -81,46 +86,101 @@ export default function ContentCreation() {
       return;
     }
 
-    if (platform === 'Instagram' && !image) {
-      setMessage('Instagram requires an image to be posted. Please upload an image first.');
-      return;
-    }
-
-    setIsPosting(true);
-    setMessage('');
-
-    try {
-      const formData = new FormData();
-      formData.append('content', content);
-      formData.append('platform', platform);
-      
-      if (image) {
-        formData.append('image', image);
+    if (postMode === 'now') {
+      // Original immediate posting logic
+      if (platform === 'Instagram' && !image) {
+        setMessage('Instagram requires an image to be posted. Please upload an image first.');
+        return;
       }
 
-      const endpoint = platform === 'X (Twitter)' ? '/api/post-to-x' : '/api/post-to-instagram';
-      
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        body: formData
-      });
+      setIsPosting(true);
+      setMessage('');
 
-      const data = await response.json();
-
-      if (response.ok) {
-        if (data.demo) {
-          setMessage(`✅ ${data.message} (Demo Mode)`);
-        } else {
-          setMessage(`✅ Successfully posted to ${platform}!`);
+      try {
+        const formData = new FormData();
+        formData.append('content', content);
+        formData.append('platform', platform);
+        
+        if (image) {
+          formData.append('image', image);
         }
-      } else {
-        setMessage(data.message || data.error || `Failed to post to ${platform}. Please try again.`);
+
+        const endpoint = platform === 'X (Twitter)' ? '/api/post-to-x' : '/api/post-to-instagram';
+        
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          body: formData
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          if (data.demo) {
+            setMessage(`✅ ${data.message} (Demo Mode)`);
+          } else {
+            setMessage(`✅ Successfully posted to ${platform}!`);
+          }
+        } else {
+          setMessage(data.message || data.error || `Failed to post to ${platform}. Please try again.`);
+        }
+      } catch (error) {
+        console.error(`Error posting to ${platform}:`, error);
+        setMessage(`Failed to post to ${platform}. Please try again.`);
+      } finally {
+        setIsPosting(false);
       }
-    } catch (error) {
-      console.error(`Error posting to ${platform}:`, error);
-      setMessage(`Failed to post to ${platform}. Please try again.`);
-    } finally {
-      setIsPosting(false);
+    } else {
+      // Scheduling logic
+      if (!scheduledTime) {
+        setMessage('Please select a scheduled time');
+        return;
+      }
+
+      const scheduledDate = new Date(scheduledTime);
+      const now = new Date();
+      const minTime = new Date(now.getTime() + 5 * 60 * 1000); // 5 minutes from now
+
+      if (scheduledDate <= minTime) {
+        setMessage('Scheduled time must be at least 5 minutes in the future');
+        return;
+      }
+
+      if (selectedPlatforms.includes('Instagram') && !image) {
+        setMessage('Instagram requires an image to be posted. Please upload an image first.');
+        return;
+      }
+
+      setIsPosting(true);
+      setMessage('');
+
+      try {
+        const formData = new FormData();
+        formData.append('content', content);
+        formData.append('platforms', JSON.stringify(selectedPlatforms.map(p => p === 'X (Twitter)' ? 'twitter' : 'instagram')));
+        formData.append('scheduledTime', scheduledTime);
+        
+        if (image) {
+          formData.append('image', image);
+        }
+
+        const response = await fetch('/api/schedule/create', {
+          method: 'POST',
+          body: formData
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          setMessage(`✅ Post scheduled for ${scheduledDate.toLocaleString()}!`);
+        } else {
+          setMessage(data.error || 'Failed to schedule post. Please try again.');
+        }
+      } catch (error) {
+        console.error('Error scheduling post:', error);
+        setMessage('Failed to schedule post. Please try again.');
+      } finally {
+        setIsPosting(false);
+      }
     }
   };
 
@@ -179,24 +239,102 @@ export default function ContentCreation() {
                 </select>
               </div>
 
-              {/* Platform Dropdown */}
+              {/* Post Mode Selection */}
               <div className="mb-6">
-                <label htmlFor="platform" className="block text-lg font-semibold text-black mb-3">
-                  Choose platform
+                <label className="block text-lg font-semibold text-black mb-3">
+                  When to post?
                 </label>
-                <select
-                  id="platform"
-                  value={platform}
-                  onChange={(e) => setPlatform(e.target.value)}
-                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 text-black transition-all duration-200"
-                >
-                  {PLATFORM_OPTIONS.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
+                <div className="flex space-x-4">
+                  <label className="flex items-center">
+                    <input
+                      type="radio"
+                      name="postMode"
+                      value="now"
+                      checked={postMode === 'now'}
+                      onChange={(e) => setPostMode(e.target.value as 'now' | 'schedule')}
+                      className="mr-2"
+                    />
+                    <span className="text-black">Post Now</span>
+                  </label>
+                  <label className="flex items-center">
+                    <input
+                      type="radio"
+                      name="postMode"
+                      value="schedule"
+                      checked={postMode === 'schedule'}
+                      onChange={(e) => setPostMode(e.target.value as 'now' | 'schedule')}
+                      className="mr-2"
+                    />
+                    <span className="text-black">Schedule for Later</span>
+                  </label>
+                </div>
               </div>
+
+              {/* Platform Selection */}
+              {postMode === 'now' ? (
+                <div className="mb-6">
+                  <label htmlFor="platform" className="block text-lg font-semibold text-black mb-3">
+                    Choose platform
+                  </label>
+                  <select
+                    id="platform"
+                    value={platform}
+                    onChange={(e) => setPlatform(e.target.value)}
+                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 text-black transition-all duration-200"
+                  >
+                    {PLATFORM_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <div className="mb-6">
+                  <label className="block text-lg font-semibold text-black mb-3">
+                    Choose platforms
+                  </label>
+                  <div className="space-y-2">
+                    {PLATFORM_OPTIONS.map((option) => (
+                      <label key={option} className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={selectedPlatforms.includes(option)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedPlatforms([...selectedPlatforms, option]);
+                            } else {
+                              setSelectedPlatforms(selectedPlatforms.filter(p => p !== option));
+                            }
+                          }}
+                          className="mr-2"
+                        />
+                        <span className="text-black">{option}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Scheduled Time Picker */}
+              {postMode === 'schedule' && (
+                <div className="mb-6">
+                  <label htmlFor="scheduledTime" className="block text-lg font-semibold text-black mb-3">
+                    Schedule for
+                  </label>
+                  <input
+                    type="datetime-local"
+                    id="scheduledTime"
+                    value={scheduledTime}
+                    onChange={(e) => setScheduledTime(e.target.value)}
+                    min={new Date(Date.now() + 5 * 60 * 1000).toISOString().slice(0, 16)}
+                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 text-black transition-all duration-200"
+                  />
+                  <p className="text-sm text-gray-600 mt-2">
+                    ⏰ Minimum 5 minutes from now
+                  </p>
+                </div>
+              )}
 
               {/* Generate Button */}
               <div className="mb-6">
@@ -271,10 +409,16 @@ export default function ContentCreation() {
               <div className="mb-6">
                 <button
                   onClick={handlePostToSocial}
-                  disabled={isPosting || !content.trim() || (platform === 'Instagram' && !image)}
+                  disabled={isPosting || !content.trim() || (postMode === 'now' && platform === 'Instagram' && !image)}
                   className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white py-3 px-6 rounded-lg font-semibold shadow-lg hover:shadow-xl transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-green-100 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none transition-all duration-200"
                 >
-                  {isPosting ? `📤 Posting to ${platform}...` : `📱 Post to ${platform}`}
+                  {isPosting 
+                    ? (postMode === 'now' ? `📤 Posting to ${platform}...` : '📅 Scheduling...') 
+                    : (postMode === 'now' 
+                        ? `📱 Post to ${platform}` 
+                        : `📅 Schedule Post${selectedPlatforms.length > 1 ? 's' : ''}`
+                      )
+                  }
                 </button>
               </div>
 

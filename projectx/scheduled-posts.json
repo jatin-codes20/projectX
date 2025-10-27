@@ -1,0 +1,25 @@
+{
+  "6bb553bc-7794-47c1-91fe-c689cadb1743": {
+    "id": "6bb553bc-7794-47c1-91fe-c689cadb1743",
+    "userId": "1488645478895927299",
+    "content": "hi",
+    "platforms": [
+      "twitter"
+    ],
+    "scheduledTime": "2025-10-23T08:15:00.000Z",
+    "status": "failed",
+    "createdAt": "2025-10-23T08:05:39.949Z",
+    "errorMessage": "Failed to post to twitter: Twitter account not connected. Please connect your Twitter account first."
+  },
+  "c2ea4802-e542-4d55-98a2-7fd136acbb85": {
+    "id": "c2ea4802-e542-4d55-98a2-7fd136acbb85",
+    "userId": "1488645478895927299",
+    "content": "hi",
+    "platforms": [
+      "twitter"
+    ],
+    "scheduledTime": "2025-10-23T08:45:00.000Z",
+    "status": "pending",
+    "createdAt": "2025-10-23T08:34:33.264Z"
+  }
+}

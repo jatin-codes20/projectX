@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession, setSession } from '@/lib/session';
+import { createProfile } from '@/lib/profileApi';
+import { cookies } from 'next/headers';
 
 export async function GET(request: NextRequest) {
   try {
@@ -8,12 +10,16 @@ export async function GET(request: NextRequest) {
     const state = searchParams.get('state');
     const error = searchParams.get('error');
 
+    console.log('📸 Instagram callback received');
+
+    const baseUrl = new URL(request.url);
+
     if (error) {
-      return NextResponse.redirect(new URL('/?error=instagram_denied', request.url));
+      return NextResponse.redirect(`${baseUrl.origin}/connect?error=instagram_denied`);
     }
 
     if (!code || !state) {
-      return NextResponse.redirect(new URL('/?error=instagram_invalid', request.url));
+      return NextResponse.redirect(`${baseUrl.origin}/connect?error=instagram_invalid`);
     }
 
     const INSTAGRAM_APP_ID = process.env.INSTAGRAM_APP_ID;
@@ -21,7 +27,7 @@ export async function GET(request: NextRequest) {
     const INSTAGRAM_REDIRECT_URI = process.env.INSTAGRAM_REDIRECT_URI || 'http://localhost:3000/api/auth/instagram/callback';
 
     if (!INSTAGRAM_APP_ID || !INSTAGRAM_APP_SECRET) {
-      return NextResponse.redirect(new URL('/?error=instagram_config', request.url));
+      return NextResponse.redirect(`${baseUrl.origin}/connect?error=instagram_config`);
     }
 
     // Get session to verify state
@@ -29,7 +35,7 @@ export async function GET(request: NextRequest) {
     const storedState = session.instagram?.oauthState;
 
     if (!storedState || storedState !== state) {
-      return NextResponse.redirect(new URL('/?error=instagram_state', request.url));
+      return NextResponse.redirect(`${baseUrl.origin}/connect?error=instagram_state`);
     }
 
     // Exchange code for access token
@@ -75,10 +81,41 @@ export async function GET(request: NextRequest) {
     delete session.instagram.oauthState;
 
     await setSession(session);
+    console.log(`✅ Instagram connected: ${profileData.username}`);
 
-    return NextResponse.redirect(new URL('/?success=instagram_connected', request.url));
+    // Get auth token from cookies
+    const cookieStore = await cookies();
+    const authToken = cookieStore.get('auth-token')?.value;
+
+    // Create profile in database if authenticated
+    if (authToken) {
+      try {
+        const profileDataForDb = {
+          platform: 'instagram',
+          username: profileData.username,
+          profileUrl: `https://instagram.com/${profileData.username}`,
+          accessToken: accessToken,
+          followersCount: 0, // Will be updated later if needed
+          bio: '', // Instagram API doesn't provide bio in basic profile
+        };
+
+        const profileResult = await createProfile(profileDataForDb, authToken);
+        
+        if (!profileResult.success) {
+          console.error('❌ Failed to create profile in database:', profileResult.error);
+          console.error('   Error details:', profileResult);
+        }
+      } catch (profileError) {
+        console.error('❌ Exception during profile creation:', profileError);
+        console.error('   Error stack:', profileError instanceof Error ? profileError.stack : 'No stack trace');
+      }
+    }
+
+    return NextResponse.redirect(`${baseUrl.origin}/connect?success=instagram_connected`);
   } catch (error) {
-    console.error('Instagram OAuth callback error:', error);
-    return NextResponse.redirect(new URL('/?error=instagram_callback', request.url));
+    console.error('❌ Instagram OAuth callback error:', error);
+    console.error('   Error details:', error instanceof Error ? error.message : 'Unknown error');
+    const baseUrl = new URL(request.url);
+    return NextResponse.redirect(`${baseUrl.origin}/connect?error=instagram_callback`);
   }
 }
