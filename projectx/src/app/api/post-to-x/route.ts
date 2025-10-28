@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { TwitterApi } from 'twitter-api-v2';
 import { getSession } from '@/lib/session';
+import { cookies } from 'next/headers';
 
 // Twitter OAuth app credentials
 const TWITTER_CONSUMER_KEY = process.env.X_API_KEY;
@@ -46,7 +47,67 @@ export async function POST(request: NextRequest) {
 
       // Post to X
       const tweet = await twitterClient.v2.tweet(content);
-      
+      console.log('✅ Successfully posted to X:', tweet.data.id);
+
+      // Persist to backend: create Post only
+      try {
+        const cookieStore = await cookies();
+        const authToken = cookieStore.get('auth-token')?.value;
+        
+        if (!authToken) {
+          console.warn('⚠️ No auth token found, skipping database persistence');
+        } else {
+          console.log('🔍 Attempting to save post to database...');
+          
+          // Get X profile directly from Java API
+          const profileResponse = await fetch('http://localhost:8080/auth/api/profiles/user', {
+            headers: {
+              'Authorization': `Bearer ${authToken}`,
+              'Content-Type': 'application/json',
+            },
+          });
+          if (profileResponse.ok) {
+            const profileData = await profileResponse.json();
+            console.log('🔍 Profile response:', profileData);
+            
+            // Find X profile from the list
+            const xProfile = profileData.profiles?.find((p: any) => p.platform === 'x');
+            
+            if (xProfile?.id) {
+              const profileId = xProfile.id;
+              console.log('🔍 Found X profile ID:', profileId);
+              
+              // Create post directly via Java API
+              const postResponse = await fetch('http://localhost:8080/auth/api/posts', {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${authToken}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  content,
+                  profileId,
+                }),
+              });
+
+              if (postResponse.ok) {
+                const postData = await postResponse.json();
+                console.log('✅ Successfully saved post to database');
+              } else {
+                console.error('❌ Failed to save post to database:', postResponse.status);
+              }
+            } else {
+              console.error('❌ Could not find X profile in response');
+            }
+          } else {
+            console.error('❌ Failed to fetch profiles:', profileResponse.status);
+          }
+        }
+      } catch (persistErr) {
+        console.error('❌ Error persisting post to database:', persistErr);
+        // Don't fail the entire request if database save fails
+      }
+
       return NextResponse.json({ 
         success: true, 
         message: 'Successfully posted to X!',

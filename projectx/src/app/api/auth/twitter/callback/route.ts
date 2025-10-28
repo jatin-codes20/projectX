@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { TwitterApi } from 'twitter-api-v2';
 import { getSession, setSession } from '@/lib/session';
-import { createProfile } from '@/lib/profileApi';
+import { createProfile, createPostForProfile, createMetricsForPost } from '@/lib/profileApi';
 import { cookies } from 'next/headers';
 
 export async function GET(request: NextRequest) {
@@ -49,6 +49,8 @@ export async function GET(request: NextRequest) {
     // Exchange for access token
     const { client: loggedClient, accessToken, accessSecret } = await client.login(oauthVerifier);
 
+
+
     // Get user info
     const user = await loggedClient.v2.me();
 
@@ -70,7 +72,9 @@ export async function GET(request: NextRequest) {
     const cookieStore = await cookies();
     const authToken = cookieStore.get('auth-token')?.value;
     console.log('🔍 Auth token:', authToken);
-    // Create profile i n database if authenticated
+    
+    let profileResult: any = undefined;
+    // Create profile in database if authenticated
     if (authToken) {
       try {
         console.log('🔍 Creating profile in database...');
@@ -83,7 +87,9 @@ export async function GET(request: NextRequest) {
           bio: user.data.description || '',
         };
 
-        const profileResult = await createProfile(profileData, authToken);
+        profileResult = await createProfile(profileData, authToken);
+        
+        console.log('🔍 Profile creation result:', JSON.stringify(profileResult, null, 2));
         
         if (!profileResult.success) {
           console.error('❌ Failed to create profile in database:', profileResult.error);
@@ -93,6 +99,57 @@ export async function GET(request: NextRequest) {
         console.error('❌ Exception during profile creation:', profileError);
         console.error('   Error stack:', profileError instanceof Error ? profileError.stack : 'No stack trace');
       }
+    }
+
+    // Fetch last 30 original tweets (no retweets/replies)
+    const tweets = await loggedClient.v2.userTimeline(user.data.id, {
+      max_results: 30,
+      'tweet.fields': ['created_at', 'text', 'public_metrics', 'entities'],
+      exclude: ['retweets', 'replies'],
+    });
+
+    console.log('📝 Fetched tweets:', tweets.data.data?.length || 0);
+
+    // If profile was created and we got its id, persist posts and metrics
+    try {
+      const cookieStore2 = await cookies();
+      const authToken2 = cookieStore2.get('auth-token')?.value;
+      // Retrieve profile id just created for X
+      const createdProfileId = profileResult?.data?.id;
+
+      if (authToken2 && createdProfileId && Array.isArray(tweets.data.data)) {
+        for (const t of tweets.data.data) {
+          const content = t.text || '';
+          // Create Post
+          const postResp = await createPostForProfile(createdProfileId, content, authToken2);
+          if (!postResp.success || !postResp.data?.id) {
+            console.warn('⚠️ Skipping metrics due to post creation failure');
+            continue;
+          }
+          const postId = postResp.data.id as number;
+          const pm = (t.public_metrics ?? {}) as {
+            like_count?: number;
+            retweet_count?: number;
+            reply_count?: number;
+            quote_count?: number;
+            impression_count?: number;
+          };
+          const kv: Record<string, number> = {};
+          if (pm.like_count !== undefined) kv['likes'] = pm.like_count;
+          if (pm.retweet_count !== undefined) kv['retweets'] = pm.retweet_count;
+          if (pm.reply_count !== undefined) kv['replies'] = pm.reply_count;
+          if (pm.quote_count !== undefined) kv['quotes'] = pm.quote_count;
+          if (pm.impression_count !== undefined) kv['impressions'] = pm.impression_count;
+          // Persist metrics for historical posts
+          if (Object.keys(kv).length > 0) {
+            await createMetricsForPost(postId, kv, authToken2);
+          }
+        }
+      } else {
+        console.log('ℹ️ Skipping persistence: missing auth token, profile id, or tweets');
+      }
+    } catch (persistErr) {
+      console.error('❌ Error persisting posts/metrics:', persistErr);
     }
 
     return NextResponse.redirect(`${baseUrl.origin}/connect?success=twitter_connected`);

@@ -1,6 +1,7 @@
 package com.authservice.service;
 
 import com.authservice.dto.ProfileDTO;
+import com.authservice.enums.PlatformType;
 import com.authservice.entity.Profile;
 import com.authservice.entity.User;
 import com.authservice.repository.ProfileRepository;
@@ -32,7 +33,7 @@ public class ProfileService {
 
         // Find existing profile
         Optional<Profile> existingProfile = profileRepository
-                .findByUserIdAndPlatform(profileDTO.getUserId(), profileDTO.getPlatform());
+                .findByUserIdAndPlatform(profileDTO.getUserId(), PlatformType.valueOf(profileDTO.getPlatform().toUpperCase()));
 
         Profile profile;
         if (existingProfile.isPresent()) {
@@ -52,14 +53,12 @@ public class ProfileService {
         profile.setUser(user);
 
         // Update profile fields
-        profile.setPlatform(profileDTO.getPlatform());
+        profile.setPlatform(PlatformType.valueOf(profileDTO.getPlatform().toUpperCase()));
         profile.setUsername(profileDTO.getUsername());
         profile.setProfileUrl(profileDTO.getProfileUrl());
         profile.setAccessToken(profileDTO.getAccessToken());
         profile.setFollowersCount(profileDTO.getFollowersCount());
-        profile.setBio(profileDTO.getBio());
-        profile.setTone(profileDTO.getTone());
-        profile.setGoal(profileDTO.getGoal());
+        
 
         // Save profile
         Profile savedProfile = profileRepository.save(profile);
@@ -87,7 +86,7 @@ public class ProfileService {
     @Transactional(readOnly = true)
     public Optional<ProfileDTO> getProfileByUserIdAndPlatform(Long userId, String platform) {
         log.info("Fetching profile for user ID: {} and platform: {}", userId, platform);
-        Optional<Profile> profile = profileRepository.findByUserIdAndPlatform(userId, platform);
+        Optional<Profile> profile = profileRepository.findByUserIdAndPlatform(userId, PlatformType.valueOf(platform.toUpperCase()));
         return profile.map(this::convertToDTO);
     }
 
@@ -96,7 +95,7 @@ public class ProfileService {
      */
     public void deleteProfile(Long userId, String platform) {
         log.info("Deleting profile for user ID: {} and platform: {}", userId, platform);
-        profileRepository.deleteByUserIdAndPlatform(userId, platform);
+        profileRepository.deleteByUserIdAndPlatform(userId, PlatformType.valueOf(platform.toUpperCase()));
         log.info("Profile deleted successfully for user ID: {} and platform: {}", userId, platform);
     }
 
@@ -105,7 +104,7 @@ public class ProfileService {
      */
     @Transactional(readOnly = true)
     public boolean profileExists(Long userId, String platform) {
-        return profileRepository.existsByUserIdAndPlatform(userId, platform);
+        return profileRepository.existsByUserIdAndPlatform(userId, PlatformType.valueOf(platform.toUpperCase()));
     }
 
     /**
@@ -116,6 +115,12 @@ public class ProfileService {
         return profileRepository.countByUserId(userId);
     }
 
+    @Transactional(readOnly = true)
+    public Optional<Profile> getProfileById(Long profileId) {
+        log.info("Fetching profile by ID: {}", profileId);
+        return profileRepository.findById(profileId);
+    }
+
     /**
      * Convert Profile entity to ProfileDTO
      */
@@ -123,14 +128,11 @@ public class ProfileService {
         ProfileDTO dto = new ProfileDTO();
         dto.setId(profile.getId());
         dto.setUserId(profile.getUser().getId());
-        dto.setPlatform(profile.getPlatform());
+        dto.setPlatform(profile.getPlatform().getValue());
         dto.setUsername(profile.getUsername());
         dto.setProfileUrl(profile.getProfileUrl());
         dto.setAccessToken(profile.getAccessToken());
         dto.setFollowersCount(profile.getFollowersCount());
-        dto.setBio(profile.getBio());
-        dto.setTone(profile.getTone());
-        dto.setGoal(profile.getGoal());
         dto.setAddedAt(profile.getAddedAt());
         dto.setUpdatedAt(profile.getUpdatedAt());
         return dto;

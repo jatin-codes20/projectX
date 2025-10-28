@@ -1,12 +1,13 @@
 package com.authservice.entity;
 
+import com.authservice.enums.PlatformType;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
-
+import java.util.List;
 @Entity
 @Table(name = "profiles")
 @Data
@@ -22,8 +23,9 @@ public class Profile {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
-    @Column(name = "platform", length = 50, nullable = false)
-    private String platform; // 'instagram', 'x'
+    @Enumerated(EnumType.STRING)
+    @Column(name = "platform", nullable = false)
+    private PlatformType platform;
 
     @Column(name = "username", length = 100)
     private String username;
@@ -37,20 +39,15 @@ public class Profile {
     @Column(name = "followers_count")
     private Integer followersCount;
 
-    @Column(name = "bio", columnDefinition = "TEXT")
-    private String bio;
-
-    @Column(name = "tone", length = 100)
-    private String tone; // nullable for now
-
-    @Column(name = "goal", length = 255)
-    private String goal; // nullable for now
 
     @Column(name = "added_at", nullable = false, updatable = false)
     private LocalDateTime addedAt;
 
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
+
+    @OneToMany(mappedBy = "profile", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<Post> posts;
 
     @PrePersist
     protected void onCreate() {

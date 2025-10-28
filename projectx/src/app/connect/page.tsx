@@ -4,7 +4,11 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { getProfiles, ProfileData } from '@/lib/profileApi';
 
+console.log('🔍 Imports loaded:', { getProfiles: typeof getProfiles });
+
 export default function ConnectPage() {
+  console.log('🚀 ConnectPage component rendered');
+  
   const [connectedPlatforms, setConnectedPlatforms] = useState<string[]>([]);
   const [profiles, setProfiles] = useState<ProfileData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -13,79 +17,96 @@ export default function ConnectPage() {
   const router = useRouter();
 
   useEffect(() => {
-    // Check URL for OAuth callback messages
-    const urlParams = new URLSearchParams(window.location.search);
-    const success = urlParams.get('success');
-    const error = urlParams.get('error');
-    const auth = urlParams.get('auth');
+    console.log('🔄 useEffect START');
+    try {
+      // Check URL for OAuth callback messages
+      const urlParams = new URLSearchParams(window.location.search);
+      const success = urlParams.get('success');
+      const error = urlParams.get('error');
+      const auth = urlParams.get('auth');
 
-    // Handle Google OAuth success
-    if (auth === 'success') {
-      setMessage('✅ Google authentication successful! Welcome to ProjectX.');
-    }
+      console.log('🔄 URL params:', { success, error, auth });
 
-    // Handle social media platform connections
-    if (success === 'twitter_connected') {
-      setMessage('✅ Twitter account connected successfully!');
-      setRefreshKey(prev => prev + 1); // Trigger profile refresh
-    } else if (success === 'instagram_connected') {
-      setMessage('✅ Instagram account connected successfully!');
-      setRefreshKey(prev => prev + 1); // Trigger profile refresh
-    } else if (error === 'twitter_denied') {
-      setMessage('❌ Twitter authorization was denied');
-    } else if (error === 'instagram_denied') {
-      setMessage('❌ Instagram authorization was denied');
-    } else if (error) {
-      setMessage(`❌ Connection failed: ${error}`);
-    }
+      // Handle Google OAuth success
+      if (auth === 'success') {
+        setMessage('✅ Google authentication successful! Welcome to ProjectX.');
+      }
 
-    // Fetch profiles from database
-    const fetchProfiles = async () => {
-      try {
-        const result = await getProfiles();
-        if (result.success && result.data) {
-          const profileList = result.data.profiles;
-          setProfiles(profileList);
-          
-          // Extract platform names for backward compatibility
-          const platforms = profileList.map(profile => profile.platform);
-          setConnectedPlatforms(platforms);
-        } else {
-          // Only log as error if it's NOT the expected "Not authenticated" state
-          if (result.error !== 'Not authenticated') {
-            console.error('Failed to fetch profiles:', result.error);
+      // Handle social media platform connections
+      if (success === 'twitter_connected') {
+        setMessage('✅ Twitter account connected successfully!');
+        setRefreshKey(prev => prev + 1); // Trigger profile refresh
+      } else if (success === 'instagram_connected') {
+        setMessage('✅ Instagram account connected successfully!');
+        setRefreshKey(prev => prev + 1); // Trigger profile refresh
+      } else if (error === 'twitter_denied') {
+        setMessage('❌ Twitter authorization was denied');
+      } else if (error === 'instagram_denied') {
+        setMessage('❌ Instagram authorization was denied');
+      } else if (error) {
+        setMessage(`❌ Connection failed: ${error}`);
+      }
+
+      // Fetch profiles from database
+      const fetchProfiles = async () => {
+        console.log('🔄 fetchProfiles function called');
+        try {
+          const result = await getProfiles();
+          console.log('🔍 getProfiles result:', JSON.stringify(result, null, 2));
+          if (result.success && result.data) {
+            const profileList = result.data.profiles;
+            console.log('🔍 Profile list:', profileList);
+            setProfiles(profileList);
+            
+            // Extract platform names for backward compatibility
+            const platforms = profileList.map(profile => profile.platform);
+            console.log('🔍 Platforms:', platforms);
+            setConnectedPlatforms(platforms);
+          } else {
+            // Only log as error if it's NOT the expected "Not authenticated" state
+            if (result.error !== 'Not authenticated') {
+              console.error('Failed to fetch profiles:', result.error);
+            }
+            // No profile in database, show disconnect state
+            setConnectedPlatforms([]);
           }
+        } catch (error) {
+          console.error('Error fetching profiles:', error);
           // No profile in database, show disconnect state
           setConnectedPlatforms([]);
+        } finally {
+          setIsLoading(false);
         }
-      } catch (error) {
-        console.error('Error fetching profiles:', error);
-        // No profile in database, show disconnect state
-        setConnectedPlatforms([]);
-      } finally {
-        setIsLoading(false);
+      };
+
+      fetchProfiles();
+      console.log('🔄 fetchProfiles() called');
+
+      // Clear URL parameters after a short delay
+      if (success || error || auth) {
+        setTimeout(() => {
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }, 100);
       }
-    };
-
-    fetchProfiles();
-
-    // Clear URL parameters after a short delay
-    if (success || error || auth) {
-      setTimeout(() => {
-        window.history.replaceState({}, document.title, window.location.pathname);
-      }, 100);
+    } catch (error) {
+      console.error('❌ Error in useEffect:', error);
     }
   }, []);
 
   // Refresh profiles when refreshKey changes (after OAuth callback)
   useEffect(() => {
+    console.log('🔄 Second useEffect triggered, refreshKey:', refreshKey);
     if (refreshKey > 0) {
       const refreshProfiles = async () => {
+        console.log('🔄 Refreshing profiles due to refreshKey change...');
         const result = await getProfiles();
+        console.log('🔄 Refresh result:', JSON.stringify(result, null, 2));
         if (result.success && result.data) {
           const profileList = result.data.profiles;
+          console.log('🔄 Refresh profile list:', profileList);
           setProfiles(profileList);
           const platforms = profileList.map(profile => profile.platform);
+          console.log('🔄 Refresh platforms:', platforms);
           setConnectedPlatforms(platforms);
         }
       };
@@ -108,6 +129,14 @@ export default function ConnectPage() {
   const isTwitterConnected = connectedPlatforms.includes('x') || connectedPlatforms.includes('twitter');
   const isInstagramConnected = connectedPlatforms.includes('instagram');
   const canContinue = isTwitterConnected || isInstagramConnected;
+
+  console.log('🔍 Button state:', { 
+    connectedPlatforms, 
+    isTwitterConnected, 
+    isInstagramConnected, 
+    canContinue, 
+    isLoading 
+  });
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
