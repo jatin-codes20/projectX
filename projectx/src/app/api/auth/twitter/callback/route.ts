@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { TwitterApi } from 'twitter-api-v2';
 import { getSession, setSession } from '@/lib/session';
-import { createProfile, createPostForProfile, createMetricsForPost } from '@/lib/profileApi';
+import { createProfileDirectJava, createPostForProfile, createMetricsForPost } from '@/lib/profileApi';
 import { cookies } from 'next/headers';
 
 export async function GET(request: NextRequest) {
@@ -71,13 +71,11 @@ export async function GET(request: NextRequest) {
     // Get auth token from cookies
     const cookieStore = await cookies();
     const authToken = cookieStore.get('auth-token')?.value;
-    console.log('🔍 Auth token:', authToken);
     
     let profileResult: any = undefined;
     // Create profile in database if authenticated
     if (authToken) {
       try {
-        console.log('🔍 Creating profile in database...');
         const profileData = {
           platform: 'x',
           username: user.data.username,
@@ -87,13 +85,10 @@ export async function GET(request: NextRequest) {
           bio: user.data.description || '',
         };
 
-        profileResult = await createProfile(profileData, authToken);
-        
-        console.log('🔍 Profile creation result:', JSON.stringify(profileResult, null, 2));
+        profileResult = await createProfileDirectJava(profileData, authToken);
         
         if (!profileResult.success) {
           console.error('❌ Failed to create profile in database:', profileResult.error);
-          console.error('   Error details:', profileResult);
         }
       } catch (profileError) {
         console.error('❌ Exception during profile creation:', profileError);
@@ -111,7 +106,7 @@ export async function GET(request: NextRequest) {
     console.log('📝 Fetched tweets:', tweets.data.data?.length || 0);
 
     // If profile was created and we got its id, persist posts and metrics
-    try {
+try {
       const cookieStore2 = await cookies();
       const authToken2 = cookieStore2.get('auth-token')?.value;
       // Retrieve profile id just created for X
@@ -126,7 +121,9 @@ export async function GET(request: NextRequest) {
             console.warn('⚠️ Skipping metrics due to post creation failure');
             continue;
           }
+          debugger;
           const postId = postResp.data.id as number;
+          debugger;
           const pm = (t.public_metrics ?? {}) as {
             like_count?: number;
             retweet_count?: number;

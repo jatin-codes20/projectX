@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession, setSession } from '@/lib/session';
-import { createProfile } from '@/lib/profileApi';
+import { createProfileDirectJava } from '@/lib/profileApi';
 import { cookies } from 'next/headers';
 
 export async function GET(request: NextRequest) {
@@ -99,11 +99,10 @@ export async function GET(request: NextRequest) {
           bio: '', // Instagram API doesn't provide bio in basic profile
         };
 
-        const profileResult = await createProfile(profileDataForDb, authToken);
+        const profileResult = await createProfileDirectJava(profileDataForDb, authToken);
         
         if (!profileResult.success) {
           console.error('❌ Failed to create profile in database:', profileResult.error);
-          console.error('   Error details:', profileResult);
         }
       } catch (profileError) {
         console.error('❌ Exception during profile creation:', profileError);

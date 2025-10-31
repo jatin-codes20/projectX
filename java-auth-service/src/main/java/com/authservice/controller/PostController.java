@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.*;
 import jakarta.validation.Valid;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -31,7 +32,7 @@ public class PostController {
      * Create a new post
      */
     @PostMapping
-    public ResponseEntity<Post> createPost(@RequestBody @Valid CreatePostRequest request) {
+    public ResponseEntity<?> createPost(@RequestBody @Valid CreatePostRequest request) {
         try {
             log.info("Creating new post with content: {} for profile: {}", request.getContent(), request.getProfileId());
             
@@ -39,7 +40,9 @@ public class PostController {
             Optional<Profile> profileOpt = profileService.getProfileById(request.getProfileId());
             if (profileOpt.isEmpty()) {
                 log.error("Profile not found with ID: {}", request.getProfileId());
-                return ResponseEntity.badRequest().build();
+                Map<String, String> error = new HashMap<>();
+                error.put("error", "Profile not found with ID: " + request.getProfileId());
+                return ResponseEntity.badRequest().body(error);
             }
             
             Profile profile = profileOpt.get();
@@ -52,11 +55,18 @@ public class PostController {
             
             Post createdPost = postService.createPost(post);
             log.info("Successfully created post with ID: {}", createdPost.getId());
+            
             return ResponseEntity.status(HttpStatus.CREATED).body(createdPost);
             
         } catch (Exception e) {
             log.error("Error creating post: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+            Map<String, String> error = new HashMap<>();
+            error.put("error", e.getMessage());
+            error.put("message", "Failed to create post");
+            if (e.getCause() != null) {
+                error.put("cause", e.getCause().getMessage());
+            }
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
         }
     }
 

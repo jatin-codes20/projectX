@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { TwitterApi } from 'twitter-api-v2';
 import { getSession } from '@/lib/session';
 import { cookies } from 'next/headers';
+import { createPostDirectJava, createMetricsForPost } from '@/lib/profileApi';
 
 // Twitter OAuth app credentials
 const TWITTER_CONSUMER_KEY = process.env.X_API_KEY;
@@ -47,9 +48,21 @@ export async function POST(request: NextRequest) {
 
       // Post to X
       const tweet = await twitterClient.v2.tweet(content);
-      console.log('✅ Successfully posted to X:', tweet.data.id);
+     
 
-      // Persist to backend: create Post only
+      // Try to fetch the tweet with metrics (may not be immediately available for new tweets)
+      let tweetMetrics: any = null;
+      try {
+        const tweetWithMetrics = await twitterClient.v2.singleTweet(tweet.data.id, {
+          'tweet.fields': ['public_metrics']
+        });
+        tweetMetrics = tweetWithMetrics.data?.public_metrics;
+        console.log('📊 Fetched tweet metrics:', tweetMetrics);
+      } catch (metricsErr) {
+        console.log('ℹ️ Could not fetch tweet metrics immediately (this is normal for new tweets)');
+      }
+
+      // Persist to backend: create Post and Metrics
       try {
         const cookieStore = await cookies();
         const authToken = cookieStore.get('auth-token')?.value;
@@ -57,54 +70,37 @@ export async function POST(request: NextRequest) {
         if (!authToken) {
           console.warn('⚠️ No auth token found, skipping database persistence');
         } else {
-          console.log('🔍 Attempting to save post to database...');
           
-          // Get X profile directly from Java API
-          const profileResponse = await fetch('http://localhost:8080/auth/api/profiles/user', {
-            headers: {
-              'Authorization': `Bearer ${authToken}`,
-              'Content-Type': 'application/json',
-            },
-          });
-          if (profileResponse.ok) {
-            const profileData = await profileResponse.json();
-            console.log('🔍 Profile response:', profileData);
+          
+          // Create post using the centralized function
+          const postResult = await createPostDirectJava(content, authToken);
+          
+          if (postResult.success && postResult.data?.id) {
+            const postId = postResult.data.id as number;
+            console.log('✅ Successfully saved post to database with ID:', postId);
             
-            // Find X profile from the list
-            const xProfile = profileData.profiles?.find((p: any) => p.platform === 'x');
+            // Create metrics for the post (initialize with 0s if metrics not available)
+            const metrics: Record<string, number> = {
+              likes: tweetMetrics?.like_count ?? 0,
+              retweets: tweetMetrics?.retweet_count ?? 0,
+              replies: tweetMetrics?.reply_count ?? 0,
+              quotes: tweetMetrics?.quote_count ?? 0,
+              impressions: tweetMetrics?.impression_count ?? 0,
+            };
             
-            if (xProfile?.id) {
-              const profileId = xProfile.id;
-              console.log('🔍 Found X profile ID:', profileId);
-              
-              // Create post directly via Java API
-              const postResponse = await fetch('http://localhost:8080/auth/api/posts', {
-                method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${authToken}`,
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                  content,
-                  profileId,
-                }),
-              });
-
-              if (postResponse.ok) {
-                const postData = await postResponse.json();
-                console.log('✅ Successfully saved post to database');
-              } else {
-                console.error('❌ Failed to save post to database:', postResponse.status);
-              }
+            console.log('🔍 Creating metrics for post:', metrics);
+            const metricsResult = await createMetricsForPost(postId, metrics, authToken);
+            if (metricsResult.success) {
+              console.log('✅ Successfully saved metrics for post');
             } else {
-              console.error('❌ Could not find X profile in response');
+              console.error('❌ Failed to save metrics for post:', metricsResult.error);
             }
           } else {
-            console.error('❌ Failed to fetch profiles:', profileResponse.status);
+            console.error('❌ Failed to save post to database:', postResult.error);
           }
         }
       } catch (persistErr) {
-        console.error('❌ Error persisting post to database:', persistErr);
+        console.error('❌ Error persisting post/metrics to database:', persistErr);
         // Don't fail the entire request if database save fails
       }
 

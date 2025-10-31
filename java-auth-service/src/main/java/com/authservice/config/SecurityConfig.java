@@ -37,7 +37,8 @@ public class SecurityConfig {
                 .requestMatchers("/oauth2/**", "/login/**", "/error").permitAll()
                 .requestMatchers("/api/public/**").permitAll()
                 .requestMatchers("/api/profiles/**").permitAll() 
-                .requestMatchers("/api/posts/**").permitAll() // Allow API access with JWT tokens
+                .requestMatchers("/api/posts/**").permitAll() 
+                .requestMatchers("/api/metrics/**").permitAll() // Allow API access with JWT tokens
                 .anyRequest().authenticated()
             )
             .oauth2Login(oauth2 -> {

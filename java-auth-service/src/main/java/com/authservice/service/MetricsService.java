@@ -33,7 +33,8 @@ public class MetricsService {
         
         Post post = postRepository.findById(postId)
                 .orElseThrow(() -> new RuntimeException("Post not found with ID: " + postId));
-
+        log.info("Post found: {}", post);
+        log.info("Metrics data: {}", metricsData);
         List<Metric> savedMetrics = metricsData.entrySet().stream()
                 .map(entry -> {
                     String metricName = entry.getKey();
@@ -41,6 +42,7 @@ public class MetricsService {
                     
                     // Check if metric already exists
                     Optional<Metric> existingMetric = metricsRepository.findByPostIdAndMetricName(postId, metricName);
+
                     
                     Metric metric;
                     if (existingMetric.isPresent()) {

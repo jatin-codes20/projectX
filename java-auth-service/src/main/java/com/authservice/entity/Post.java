@@ -2,6 +2,8 @@ package com.authservice.entity;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -12,6 +14,7 @@ import lombok.NoArgsConstructor;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler", "profile.posts", "profile.user"})
 public class Post {
     @Id
     @GeneratedValue(strategy=GenerationType.IDENTITY)
@@ -22,12 +25,14 @@ public class Post {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "profile_id", nullable = false)
+    @JsonIgnore // Ignore profile during serialization to avoid Hibernate proxy issues
     private Profile profile;
 
     @Column(name="created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
     @OneToMany(mappedBy = "post", cascade = CascadeType.ALL, orphanRemoval = true)
+    @JsonIgnore // Ignore metrics during serialization to avoid Hibernate proxy issues
     private List<Metric> metrics;
   
 

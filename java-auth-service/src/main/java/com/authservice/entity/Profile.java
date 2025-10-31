@@ -1,6 +1,7 @@
 package com.authservice.entity;
 
 import com.authservice.enums.PlatformType;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -13,6 +14,7 @@ import java.util.List;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler", "user.profiles", "posts.profile", "posts.metrics"})
 public class Profile {
 
     @Id

@@ -51,7 +51,15 @@ export async function POST(request: NextRequest) {
   try {
     // Get the HTTP-only auth-token cookie
     const cookieStore = await cookies();
-    const authToken = cookieStore.get('auth-token')?.value;
+    let authToken = cookieStore.get('auth-token')?.value;
+    
+    // Fallback: accept Authorization header (for server-to-server calls)
+    if (!authToken) {
+      const authHeader = request.headers.get('authorization') || request.headers.get('Authorization');
+      if (authHeader && authHeader.toLowerCase().startsWith('bearer ')) {
+        authToken = authHeader.slice(7).trim();
+      }
+    }
     
     console.log('🔍 API route POST - Auth token:', authToken ? 'present' : 'missing');
     
