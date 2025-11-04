@@ -3,8 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    
-     "dev": "NODE_OPTIONS='--inspect' next",
+    "dev": "NODE_OPTIONS='--inspect' next",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"
@@ -30,6 +29,7 @@
     "@eslint/eslintrc": "^3",
     "@types/node": "^20",
     "@types/react": "^19",
+    "@types/react-big-calendar": "^1.16.3",
     "@types/react-dom": "^19",
     "autoprefixer": "^10.4.21",
     "eslint": "^9",

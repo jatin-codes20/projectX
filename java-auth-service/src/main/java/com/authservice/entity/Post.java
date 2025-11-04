@@ -8,12 +8,14 @@ import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import lombok.ToString;
 
 @Entity
 @Table(name="posts")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
+@ToString(exclude = {"profile", "metrics"}) // Exclude circular references from toString
 @JsonIgnoreProperties({"hibernateLazyInitializer", "handler", "profile.posts", "profile.user"})
 public class Post {
     @Id

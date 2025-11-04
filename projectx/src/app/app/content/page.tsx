@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { getRecentPosts } from '@/lib/profileApi';
 
 const TONE_OPTIONS = [
   'Neutral',
@@ -15,7 +16,16 @@ const PLATFORM_OPTIONS = [
   'Instagram'
 ];
 
+interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 export default function ContentCreation() {
+  // Mode toggle: 'manual' or 'ai'
+  const [creationMode, setCreationMode] = useState<'manual' | 'ai'>('manual');
+  
+  // Manual mode states
   const [topic, setTopic] = useState('');
   const [tone, setTone] = useState('Neutral');
   const [platform, setPlatform] = useState('X (Twitter)');
@@ -26,10 +36,62 @@ export default function ContentCreation() {
   const [isPosting, setIsPosting] = useState(false);
   const [message, setMessage] = useState('');
   
+  // AI Chat mode states
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [isChatting, setIsChatting] = useState(false);
+  const [previousPosts, setPreviousPosts] = useState<string[]>([]);
+  const [useAccountTone, setUseAccountTone] = useState(false);
+  const [suggestedContent, setSuggestedContent] = useState<string | null>(null);
+  
   // Scheduling states
   const [postMode, setPostMode] = useState<'now' | 'schedule'>('now');
   const [scheduledTime, setScheduledTime] = useState('');
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(['X (Twitter)']);
+
+  // Fetch previous posts when AI mode is enabled
+  useEffect(() => {
+    if (creationMode === 'ai' && previousPosts.length === 0) {
+      const fetchPreviousPosts = async () => {
+        try {
+          const result = await getRecentPosts(20);
+          console.log('🔍 getRecentPosts result:', result);
+          
+          if (result.success && result.data?.posts) {
+            console.log('🔍 Posts data:', result.data.posts);
+            const postContents = result.data.posts
+              .map((post: any) => {
+                console.log('🔍 Post item:', post);
+                return post.content;
+              })
+              .filter(Boolean) as string[];
+            
+            console.log('🔍 Extracted post contents:', postContents);
+            console.log('🔍 Number of posts:', postContents.length);
+            
+            setPreviousPosts(postContents);
+            
+            // Auto-enable account tone if user has posts
+            if (postContents.length > 0) {
+              setUseAccountTone(true);
+              console.log('✅ Auto-enabled account tone - found', postContents.length, 'previous posts');
+            } else {
+              console.log('⚠️ No post content found in response');
+            }
+          } else {
+            console.log('⚠️ Failed to fetch posts:', result.error || 'Unknown error');
+            console.log('🔍 Full result:', JSON.stringify(result, null, 2));
+          }
+        } catch (error) {
+          console.error('❌ Error fetching previous posts:', error);
+        }
+      };
+      fetchPreviousPosts();
+    }
+  }, [creationMode]);
+
+  // Disable account tone toggle if no previous posts
+  const canUseAccountTone = previousPosts.length > 0;
 
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -77,6 +139,83 @@ export default function ContentCreation() {
       setMessage('Failed to generate content. Please try again.');
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  // AI Chat handlers
+  const handleChatSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!chatInput.trim() || isChatting) return;
+
+    const userMessage = chatInput.trim();
+    setChatInput('');
+    setIsChatting(true);
+    setSuggestedContent(null);
+
+    // Add user message to chat
+    const newUserMessage: ChatMessage = { role: 'user', content: userMessage };
+    setChatMessages(prev => [...prev, newUserMessage]);
+
+    try {
+      // Build messages array for API
+      const messagesForApi = [...chatMessages, newUserMessage].map(msg => ({
+        role: msg.role,
+        content: msg.content
+      }));
+
+      // Determine platform for AI context
+      const platformForAI = postMode === 'now' 
+        ? (platform === 'X (Twitter)' ? 'twitter' : 'instagram')
+        : (selectedPlatforms.includes('X (Twitter)') ? 'twitter' : 'instagram');
+
+      const response = await fetch('/api/send-to-ai/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: messagesForApi,
+          previous_posts: useAccountTone ? previousPosts : [],
+          use_account_tone: useAccountTone && canUseAccountTone,
+          platform: platformForAI
+        })
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        // Add AI response to chat
+        const aiMessage: ChatMessage = { role: 'assistant', content: data.message };
+        setChatMessages(prev => [...prev, aiMessage]);
+        
+        // If AI suggested content, show it
+        if (data.suggested_content) {
+          setSuggestedContent(data.suggested_content);
+        }
+      } else {
+        const errorMessage: ChatMessage = { 
+          role: 'assistant', 
+          content: `Error: ${data.error || 'Failed to get AI response. Please try again.'}` 
+        };
+        setChatMessages(prev => [...prev, errorMessage]);
+      }
+    } catch (error) {
+      console.error('Error in chat:', error);
+      const errorMessage: ChatMessage = { 
+        role: 'assistant', 
+        content: 'Sorry, I encountered an error. Please try again.' 
+      };
+      setChatMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setIsChatting(false);
+    }
+  };
+
+  const handleUseSuggestedContent = () => {
+    if (suggestedContent) {
+      setContent(suggestedContent);
+      setSuggestedContent(null);
+      setMessage('✅ Content applied! You can edit it further or post it.');
     }
   };
 
@@ -154,6 +293,8 @@ export default function ContentCreation() {
       setMessage('');
 
       try {
+        // Use Next.js API route (proxy to Java backend)
+        // The API route will handle image upload if present
         const formData = new FormData();
         formData.append('content', content);
         formData.append('platforms', JSON.stringify(selectedPlatforms.map(p => p === 'X (Twitter)' ? 'twitter' : 'instagram')));
@@ -165,15 +306,21 @@ export default function ContentCreation() {
 
         const response = await fetch('/api/schedule/create', {
           method: 'POST',
+          credentials: 'include', // Include cookies (auth-token)
           body: formData
         });
 
         const data = await response.json();
 
-        if (response.ok) {
+        if (response.ok && data.success) {
           setMessage(`✅ Post scheduled for ${scheduledDate.toLocaleString()}!`);
+          // Optionally clear the form
+          setContent('');
+          setScheduledTime('');
+          setSelectedPlatforms([]);
+          setImage(null);
         } else {
-          setMessage(data.error || 'Failed to schedule post. Please try again.');
+          setMessage(data.error || data.message || 'Failed to schedule post. Please try again.');
         }
       } catch (error) {
         console.error('Error scheduling post:', error);
@@ -198,14 +345,45 @@ export default function ContentCreation() {
           <div className="w-24 h-1 bg-gradient-to-r from-blue-500 to-purple-500 mx-auto mt-4 rounded-full"></div>
         </div>
 
+        {/* Mode Toggle */}
+        <div className="flex justify-center mb-8">
+          <div className="bg-white rounded-xl shadow-lg p-2 border border-gray-200 inline-flex">
+            <button
+              onClick={() => setCreationMode('manual')}
+              className={`px-6 py-3 rounded-lg font-semibold transition-all duration-200 ${
+                creationMode === 'manual'
+                  ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-md'
+                  : 'text-gray-600 hover:text-gray-800'
+              }`}
+            >
+              ✏️ Manual
+            </button>
+            <button
+              onClick={() => setCreationMode('ai')}
+              className={`px-6 py-3 rounded-lg font-semibold transition-all duration-200 ${
+                creationMode === 'ai'
+                  ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-md'
+                  : 'text-gray-600 hover:text-gray-800'
+              }`}
+            >
+              🤖 AI Chat
+            </button>
+          </div>
+        </div>
+
         {/* Two Column Layout */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Left Column - Content Creation */}
           <div>
             <div className="bg-white rounded-2xl shadow-xl p-8 border border-gray-200">
-              <h2 className="text-2xl font-bold text-black mb-6">📝 Create Content</h2>
-          
-              {/* Topic Input */}
+              <h2 className="text-2xl font-bold text-black mb-6">
+                {creationMode === 'manual' ? '📝 Create Content' : '🤖 AI Assistant'}
+              </h2>
+
+              {creationMode === 'manual' ? (
+                <>
+                  {/* Manual Mode UI */}
+                  {/* Topic Input */}
               <div className="mb-6">
                 <label htmlFor="topic" className="block text-lg font-semibold text-black mb-3">
                   What&apos;s your topic?
@@ -436,6 +614,300 @@ export default function ContentCreation() {
                     <span className="font-medium">{message}</span>
                   </div>
                 </div>
+              )}
+                </>
+              ) : (
+                <>
+                  {/* AI Chat Mode UI */}
+                  {/* Account Tone Toggle */}
+                  <div className="mb-6">
+                    <label className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
+                      <div>
+                        <span className="block text-sm font-semibold text-black">Match Account Tone</span>
+                        <span className="block text-xs text-gray-600 mt-1">
+                          {canUseAccountTone 
+                            ? 'AI will analyze your previous posts and match your writing style'
+                            : 'No previous posts found. Post some content first to enable this feature.'
+                          }
+                        </span>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={useAccountTone}
+                        onChange={(e) => setUseAccountTone(e.target.checked)}
+                        disabled={!canUseAccountTone}
+                        className="w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                      />
+                    </label>
+                  </div>
+
+                  {/* Chat Messages */}
+                  <div className="mb-6">
+                    <div className="h-96 overflow-y-auto border-2 border-gray-200 rounded-lg p-4 bg-gray-50 space-y-4">
+                      {chatMessages.length === 0 ? (
+                        <div className="text-center text-gray-500 mt-8">
+                          <p className="text-lg mb-2">👋 Hi! I&apos;m your AI content assistant.</p>
+                          <p className="text-sm">Tell me what kind of post you&apos;d like to create, and I&apos;ll help you write it!</p>
+                        </div>
+                      ) : (
+                        chatMessages.map((msg, idx) => (
+                          <div
+                            key={idx}
+                            className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                          >
+                            <div
+                              className={`max-w-[80%] rounded-lg p-3 ${
+                                msg.role === 'user'
+                                  ? 'bg-blue-600 text-white'
+                                  : 'bg-white text-black border border-gray-300'
+                              }`}
+                            >
+                              <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                      {isChatting && (
+                        <div className="flex justify-start">
+                          <div className="bg-white text-black border border-gray-300 rounded-lg p-3">
+                            <div className="flex items-center space-x-2">
+                              <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                              <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                              <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Suggested Content (if available) */}
+                  {suggestedContent && (
+                    <div className="mb-6 p-4 bg-blue-50 border-2 border-blue-200 rounded-lg">
+                      <div className="flex items-start justify-between mb-2">
+                        <span className="text-sm font-semibold text-blue-900">✨ Suggested Post:</span>
+                        <button
+                          onClick={handleUseSuggestedContent}
+                          className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+                        >
+                          Use This
+                        </button>
+                      </div>
+                      <p className="text-sm text-gray-800 whitespace-pre-wrap break-words">{suggestedContent}</p>
+                    </div>
+                  )}
+
+                  {/* Chat Input */}
+                  <form onSubmit={handleChatSubmit} className="mb-6">
+                    <div className="flex space-x-2">
+                      <input
+                        type="text"
+                        value={chatInput}
+                        onChange={(e) => setChatInput(e.target.value)}
+                        placeholder="Type your message..."
+                        disabled={isChatting}
+                        className="flex-1 px-4 py-3 border-2 border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 text-black transition-all duration-200 disabled:opacity-50"
+                      />
+                      <button
+                        type="submit"
+                        disabled={!chatInput.trim() || isChatting}
+                        className="px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg font-semibold shadow-lg hover:shadow-xl transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none transition-all duration-200"
+                      >
+                        {isChatting ? '...' : 'Send'}
+                      </button>
+                    </div>
+                  </form>
+
+                  {/* Post Mode, Platform Selection, Scheduling, Image Upload, Content Textarea, Post Button, Message Display */}
+                  {/* (These are shared between manual and AI modes) */}
+                  {/* Post Mode Selection */}
+                  <div className="mb-6">
+                    <label className="block text-lg font-semibold text-black mb-3">
+                      When to post?
+                    </label>
+                    <div className="flex space-x-4">
+                      <label className="flex items-center">
+                        <input
+                          type="radio"
+                          name="postMode"
+                          value="now"
+                          checked={postMode === 'now'}
+                          onChange={(e) => setPostMode(e.target.value as 'now' | 'schedule')}
+                          className="mr-2"
+                        />
+                        <span className="text-black">Post Now</span>
+                      </label>
+                      <label className="flex items-center">
+                        <input
+                          type="radio"
+                          name="postMode"
+                          value="schedule"
+                          checked={postMode === 'schedule'}
+                          onChange={(e) => setPostMode(e.target.value as 'now' | 'schedule')}
+                          className="mr-2"
+                        />
+                        <span className="text-black">Schedule for Later</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Platform Selection */}
+                  {postMode === 'now' ? (
+                    <div className="mb-6">
+                      <label htmlFor="platform" className="block text-lg font-semibold text-black mb-3">
+                        Choose platform
+                      </label>
+                      <select
+                        id="platform"
+                        value={platform}
+                        onChange={(e) => setPlatform(e.target.value)}
+                        className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 text-black transition-all duration-200"
+                      >
+                        {PLATFORM_OPTIONS.map((option) => (
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : (
+                    <div className="mb-6">
+                      <label className="block text-lg font-semibold text-black mb-3">
+                        Choose platforms
+                      </label>
+                      <div className="space-y-2">
+                        {PLATFORM_OPTIONS.map((option) => (
+                          <label key={option} className="flex items-center">
+                            <input
+                              type="checkbox"
+                              checked={selectedPlatforms.includes(option)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedPlatforms([...selectedPlatforms, option]);
+                                } else {
+                                  setSelectedPlatforms(selectedPlatforms.filter(p => p !== option));
+                                }
+                              }}
+                              className="mr-2"
+                            />
+                            <span className="text-black">{option}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Scheduled Time Picker */}
+                  {postMode === 'schedule' && (
+                    <div className="mb-6">
+                      <label htmlFor="scheduledTime" className="block text-lg font-semibold text-black mb-3">
+                        Schedule for
+                      </label>
+                      <input
+                        type="datetime-local"
+                        id="scheduledTime"
+                        value={scheduledTime}
+                        onChange={(e) => setScheduledTime(e.target.value)}
+                        min={new Date(Date.now() + 5 * 60 * 1000).toISOString().slice(0, 16)}
+                        className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 text-black transition-all duration-200"
+                      />
+                      <p className="text-sm text-gray-600 mt-2">
+                        ⏰ Minimum 5 minutes from now
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Content Textarea */}
+                  <div className="mb-6">
+                    <label htmlFor="content" className="block text-lg font-semibold text-black mb-3">
+                      Your content (editable)
+                    </label>
+                    <textarea
+                      id="content"
+                      value={content}
+                      onChange={(e) => setContent(e.target.value)}
+                      placeholder="Content will appear here after you chat with AI or type your own..."
+                      rows={6}
+                      className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 text-black transition-all duration-200 resize-none"
+                    />
+                    <div className="flex justify-between items-center mt-2">
+                      <span className="text-sm text-gray-600">
+                        💡 Keep under {platform === 'X (Twitter)' ? '280' : '2200'} characters for {platform === 'X (Twitter)' ? 'Twitter' : 'Instagram'}
+                      </span>
+                      <span className={`text-sm font-medium ${
+                        content.length > (platform === 'X (Twitter)' ? 280 : 2200) 
+                          ? 'text-red-500' 
+                          : content.length > (platform === 'X (Twitter)' ? 250 : 2000) 
+                            ? 'text-yellow-500' 
+                            : 'text-gray-600'
+                      }`}>
+                        {content.length}/{platform === 'X (Twitter)' ? '280' : '2200'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Image Upload */}
+                  <div className="mb-6">
+                    <label htmlFor="image" className="block text-lg font-semibold text-black mb-3">
+                      📸 Upload Image {platform === 'Instagram' ? '(Required)' : '(Optional)'}
+                    </label>
+                    <input
+                      type="file"
+                      id="image"
+                      accept="image/*"
+                      onChange={handleImageUpload}
+                      className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 text-black transition-all duration-200"
+                    />
+                    {platform === 'Instagram' && (
+                      <p className="text-sm text-orange-600 mt-2">
+                        ⚠️ Instagram requires an image to be posted
+                      </p>
+                    )}
+                    {imagePreview && (
+                      <div className="mt-4">
+                        <img
+                          src={imagePreview}
+                          alt="Preview"
+                          className="w-full max-w-md h-48 object-cover rounded-lg border border-gray-300"
+                        />
+                        <p className="text-sm text-gray-600 mt-2">Image preview</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Post Button */}
+                  <div className="mb-6">
+                    <button
+                      onClick={handlePostToSocial}
+                      disabled={isPosting || !content.trim() || (postMode === 'now' && platform === 'Instagram' && !image)}
+                      className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white py-3 px-6 rounded-lg font-semibold shadow-lg hover:shadow-xl transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-green-100 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none transition-all duration-200"
+                    >
+                      {isPosting 
+                        ? (postMode === 'now' ? `📤 Posting to ${platform}...` : '📅 Scheduling...') 
+                        : (postMode === 'now' 
+                            ? `📱 Post to ${platform}` 
+                            : `📅 Schedule Post${selectedPlatforms.length > 1 ? 's' : ''}`
+                          )
+                      }
+                    </button>
+                  </div>
+
+                  {/* Message Display */}
+                  {message && (
+                    <div className={`p-4 rounded-lg border-2 shadow-lg ${
+                      message.includes('Success') || message.includes('generated successfully') || message.includes('applied')
+                        ? 'bg-gradient-to-r from-green-50 to-emerald-50 text-green-800 border-green-200'
+                        : 'bg-gradient-to-r from-red-50 to-pink-50 text-red-800 border-red-200'
+                    }`}>
+                      <div className="flex items-center">
+                        <span className="text-xl mr-2">
+                          {message.includes('Success') || message.includes('generated successfully') || message.includes('applied') ? '✅' : '❌'}
+                        </span>
+                        <span className="font-medium">{message}</span>
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>

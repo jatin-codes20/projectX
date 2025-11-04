@@ -21,5 +21,16 @@
     "scheduledTime": "2025-10-23T08:45:00.000Z",
     "status": "pending",
     "createdAt": "2025-10-23T08:34:33.264Z"
+  },
+  "0fc47567-98cc-4d44-a9a6-da64bf55da7d": {
+    "id": "0fc47567-98cc-4d44-a9a6-da64bf55da7d",
+    "userId": "default-user",
+    "content": "Legs is most important part of the workout split",
+    "platforms": [
+      "twitter"
+    ],
+    "scheduledTime": "2025-11-04T07:13:00.000Z",
+    "status": "pending",
+    "createdAt": "2025-11-04T07:01:55.540Z"
   }
 }

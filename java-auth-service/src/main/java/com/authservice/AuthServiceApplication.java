@@ -2,8 +2,9 @@ package com.authservice;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.autoconfigure.quartz.QuartzAutoConfiguration;
 
-@SpringBootApplication
+@SpringBootApplication(exclude = {QuartzAutoConfiguration.class})
 public class AuthServiceApplication {
 
     public static void main(String[] args) {

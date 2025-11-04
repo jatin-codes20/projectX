@@ -11,12 +11,15 @@ interface ScheduledPost {
   id: string;
   userId: string;
   content: string;
-  platforms: ('twitter' | 'instagram')[];
-  scheduledTime: Date;
+  platforms: string[];
+  scheduledTime: string | Date; // Can be ISO string or Date
   imageUrl?: string;
-  status: 'pending' | 'published' | 'failed';
-  createdAt: Date;
+  status: 'PENDING' | 'PROCESSING' | 'PUBLISHED' | 'FAILED' | 'pending' | 'published' | 'failed'; // Support both formats
+  createdAt?: string | Date;
+  updatedAt?: string | Date;
   errorMessage?: string;
+  retryCount?: number;
+  maxRetries?: number;
 }
 
 interface ScheduledPostsStats {
@@ -44,14 +47,37 @@ export default function ScheduledPostsPage() {
 
   const fetchScheduledPosts = async () => {
     try {
-      const response = await fetch('/api/schedule/list');
+      const response = await fetch('/api/schedule/list', {
+        credentials: 'include' // Include cookies (auth-token)
+      });
       const data = await response.json();
       
-      if (data.success) {
-        setPosts(data.posts);
-        setStats(data.stats);
+      if (data.success && data.posts) {
+        // Transform data to match expected format
+        const transformedPosts = data.posts.map((post: any) => ({
+          id: post.id?.toString() || '',
+          userId: post.userId?.toString() || '',
+          content: post.content,
+          platforms: post.platforms || [],
+          status: (post.status || 'PENDING').toUpperCase(), // Normalize to uppercase
+          scheduledTime: new Date(post.scheduledTime), // Convert to Date object
+          imageUrl: post.imageUrl,
+          retryCount: post.retryCount || 0,
+          maxRetries: post.maxRetries || 3,
+          errorMessage: post.errorMessage,
+          createdAt: post.createdAt ? new Date(post.createdAt) : new Date(),
+          updatedAt: post.updatedAt ? new Date(post.updatedAt) : new Date()
+        }));
+        
+        setPosts(transformedPosts);
+        setStats(data.stats || {
+          total: transformedPosts.length,
+          pending: transformedPosts.filter((p: any) => p.status === 'PENDING').length,
+          published: transformedPosts.filter((p: any) => p.status === 'PUBLISHED').length,
+          failed: transformedPosts.filter((p: any) => p.status === 'FAILED').length
+        });
       } else {
-        setMessage('Failed to fetch scheduled posts');
+        setMessage(data.error || 'Failed to fetch scheduled posts');
       }
     } catch (error) {
       console.error('Error fetching scheduled posts:', error);
@@ -68,7 +94,8 @@ export default function ScheduledPostsPage() {
 
     try {
       const response = await fetch(`/api/schedule/${id}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        credentials: 'include' // Include cookies (auth-token)
       });
       
       const data = await response.json();
@@ -77,7 +104,7 @@ export default function ScheduledPostsPage() {
         setMessage('Scheduled post deleted successfully');
         fetchScheduledPosts(); // Refresh the list
       } else {
-        setMessage('Failed to delete scheduled post');
+        setMessage(data.error || 'Failed to delete scheduled post');
       }
     } catch (error) {
       console.error('Error deleting scheduled post:', error);
@@ -89,7 +116,8 @@ export default function ScheduledPostsPage() {
     setEditingPost(post);
     setEditContent(post.content);
     setEditScheduledTime(new Date(post.scheduledTime).toISOString().slice(0, 16));
-    setEditPlatforms(post.platforms);
+    // Map backend platform names ('x') to UI platform names ('twitter')
+    setEditPlatforms(post.platforms.map(p => (p === 'x' || p === 'twitter') ? 'twitter' : p));
   };
 
   const saveEdit = async () => {
@@ -98,13 +126,15 @@ export default function ScheduledPostsPage() {
     try {
       const response = await fetch(`/api/schedule/${editingPost.id}`, {
         method: 'PUT',
+        credentials: 'include', // Include cookies (auth-token)
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           content: editContent,
-          platforms: editPlatforms,
-          scheduledTime: editScheduledTime
+          platforms: editPlatforms, // API route will handle conversion
+          scheduledTime: editScheduledTime,
+          imageUrl: editingPost.imageUrl
         })
       });
       
@@ -115,7 +145,7 @@ export default function ScheduledPostsPage() {
         setEditingPost(null);
         fetchScheduledPosts(); // Refresh the list
       } else {
-        setMessage('Failed to update scheduled post');
+        setMessage(data.error || 'Failed to update scheduled post');
       }
     } catch (error) {
       console.error('Error updating scheduled post:', error);
@@ -134,15 +164,20 @@ export default function ScheduledPostsPage() {
     const post = event.post as ScheduledPost;
     let backgroundColor = '#3b82f6'; // Default blue for Twitter
     
-    if (post.platforms.includes('instagram') && post.platforms.includes('twitter')) {
+    // Check for both 'x' and 'twitter' for compatibility
+    const hasX = post.platforms.includes('x') || post.platforms.includes('twitter');
+    const hasInstagram = post.platforms.includes('instagram');
+    
+    if (hasInstagram && hasX) {
       backgroundColor = '#8b5cf6'; // Purple for both
-    } else if (post.platforms.includes('instagram')) {
+    } else if (hasInstagram) {
       backgroundColor = '#ec4899'; // Pink for Instagram
     }
     
-    if (post.status === 'published') {
+    const normalizedStatus = post.status.toUpperCase();
+    if (normalizedStatus === 'PUBLISHED') {
       backgroundColor = '#10b981'; // Green for published
-    } else if (post.status === 'failed') {
+    } else if (normalizedStatus === 'FAILED') {
       backgroundColor = '#ef4444'; // Red for failed
     }
 
@@ -160,14 +195,17 @@ export default function ScheduledPostsPage() {
 
   const getEventTitle = (event: any) => {
     const post = event.post as ScheduledPost;
-    const platforms = post.platforms.map(p => p === 'twitter' ? 'X' : 'IG').join(', ');
-    const status = post.status === 'pending' ? '' : ` (${post.status})`;
+    const platforms = post.platforms.map(p => (p === 'twitter' || p === 'x') ? 'X' : 'IG').join(', ');
+    const normalizedStatus = post.status.toUpperCase();
+    const status = normalizedStatus === 'PENDING' ? '' : ` (${normalizedStatus})`;
     return `${platforms}${status}`;
   };
 
   const filteredPosts = posts.filter(post => {
     if (filter === 'all') return true;
-    return post.status === filter;
+    const normalizedStatus = post.status.toUpperCase();
+    const normalizedFilter = filter.toUpperCase();
+    return normalizedStatus === normalizedFilter;
   });
 
   const calendarEvents = filteredPosts.map(post => {
@@ -207,16 +245,18 @@ export default function ScheduledPostsPage() {
   };
 
   const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'pending': return 'text-blue-600 bg-blue-100';
-      case 'published': return 'text-green-600 bg-green-100';
-      case 'failed': return 'text-red-600 bg-red-100';
+    const normalizedStatus = status.toUpperCase();
+    switch (normalizedStatus) {
+      case 'PENDING': return 'text-blue-600 bg-blue-100';
+      case 'PROCESSING': return 'text-yellow-600 bg-yellow-100';
+      case 'PUBLISHED': return 'text-green-600 bg-green-100';
+      case 'FAILED': return 'text-red-600 bg-red-100';
       default: return 'text-gray-600 bg-gray-100';
     }
   };
 
   const getPlatformIcon = (platform: string) => {
-    return platform === 'twitter' ? '𝕏' : '📷';
+    return (platform === 'twitter' || platform === 'x') ? '𝕏' : '📷';
   };
 
   if (isLoading) {
@@ -358,7 +398,7 @@ export default function ScheduledPostsPage() {
                         )}
                       </div>
                       <div className="ml-4 flex space-x-2">
-                        {post.status === 'pending' && (
+                        {(post.status.toUpperCase() === 'PENDING' || post.status === 'pending') && (
                           <>
                             <button
                               onClick={() => startEdit(post)}
