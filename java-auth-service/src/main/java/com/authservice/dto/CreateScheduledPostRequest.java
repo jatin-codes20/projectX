@@ -26,6 +26,6 @@ public class CreateScheduledPostRequest {
     @Future(message = "Scheduled time must be in the future")
     private LocalDateTime scheduledTime;
 
-    private String imageUrl; // Optional
+    private List<String> mediaUrls; // Optional: array of media URLs (images and/or videos)
 }
 

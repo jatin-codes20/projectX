@@ -7,7 +7,7 @@ import com.authservice.enums.PostStatus;
 import com.authservice.enums.PlatformType;
 import com.authservice.repository.ScheduledPostRepository;
 import com.authservice.repository.ProfileRepository;
-import com.authservice.service.PostExecutionService;
+import com.authservice.service.IPostExecutionService;
 import com.authservice.service.PostService;
 import lombok.extern.slf4j.Slf4j;
 import org.quartz.Job;
@@ -36,7 +36,7 @@ public class PostExecutionJob implements Job {
     private PostService postService;
     
     @Autowired
-    private PostExecutionService postExecutionService;
+    private IPostExecutionService postExecutionService;
 
     @Override
     @Transactional

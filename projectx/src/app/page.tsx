@@ -24,7 +24,8 @@ export default function LandingPage() {
 
   const handleGoogleAuth = () => {
     // Redirect to Java authentication service for Google OAuth
-    window.location.href = 'http://localhost:8080/auth/oauth2/authorization/google';
+    const backendUrl = process.env.NEXT_PUBLIC_JAVA_BACKEND_URL || 'http://localhost:8080/auth';
+    window.location.href = `${backendUrl}/oauth2/authorization/google`;
   };
 
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { uploadImageToLocal } from '@/lib/imageUpload';
-import { uploadImageToCloudinary } from '@/lib/cloudinaryUpload';
+import { uploadImageToLocal, uploadVideoToLocal } from '@/lib/imageUpload';
+import { uploadImageToCloudinary, uploadVideoToCloudinary } from '@/lib/cloudinaryUpload';
 
 const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME;
 const CLOUDINARY_API_KEY = process.env.CLOUDINARY_API_KEY;
@@ -26,7 +26,25 @@ export async function POST(request: NextRequest) {
     const content = formData.get('content') as string;
     const platforms = formData.get('platforms') as string;
     const scheduledTime = formData.get('scheduledTime') as string;
-    const image = formData.get('image') as File;
+    
+    // Get all media files (can be images or videos)
+    const mediaFiles: File[] = [];
+    const formDataEntries = Array.from(formData.entries());
+    
+    for (const [key, value] of formDataEntries) {
+      // Check if value is a File-like object (FormData entries from Next.js are File objects)
+      // File extends Blob, so check for Blob properties
+      const isFile = value && 
+                     typeof value === 'object' && 
+                     'size' in value && 
+                     'type' in value && 
+                     'name' in value &&
+                     typeof (value as any).arrayBuffer === 'function';
+      
+      if ((key === 'image' || key === 'video' || key.startsWith('media')) && isFile) {
+        mediaFiles.push(value as File);
+      }
+    }
 
     if (!content || !platforms || !scheduledTime) {
       return NextResponse.json(
@@ -35,40 +53,61 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Handle image upload if present
-    let imageUrl: string | undefined;
-    if (image) {
+    // Handle multiple media file uploads
+    const mediaUrls: string[] = [];
+    
+    for (const file of mediaFiles) {
       try {
+        const isVideo = file.type.startsWith('video/');
+        const isImage = file.type.startsWith('image/');
+        
+        if (!isVideo && !isImage) {
+          console.warn(`Skipping file ${file.name} - unsupported type: ${file.type}`);
+          continue;
+        }
+
+        let uploadResult;
+        
         // Try Cloudinary first if credentials are available
         if (CLOUDINARY_CLOUD_NAME && CLOUDINARY_API_KEY && CLOUDINARY_API_SECRET) {
-          const uploadResult = await uploadImageToCloudinary(
-            image,
-            CLOUDINARY_CLOUD_NAME,
-            CLOUDINARY_API_KEY,
-            CLOUDINARY_API_SECRET
-          );
-
-          if (uploadResult.success) {
-            imageUrl = uploadResult.url!;
+          if (isVideo) {
+            uploadResult = await uploadVideoToCloudinary(
+              file,
+              CLOUDINARY_CLOUD_NAME,
+              CLOUDINARY_API_KEY,
+              CLOUDINARY_API_SECRET
+            );
           } else {
-            // Fallback to local storage
-            const localResult = await uploadImageToLocal(image);
-            if (localResult.success) {
-              const baseUrl = request.nextUrl.origin;
-              imageUrl = `${baseUrl}${localResult.url}`;
-            }
+            uploadResult = await uploadImageToCloudinary(
+              file,
+              CLOUDINARY_CLOUD_NAME,
+              CLOUDINARY_API_KEY,
+              CLOUDINARY_API_SECRET
+            );
           }
-        } else {
-          // Fallback to local storage
-          const uploadResult = await uploadImageToLocal(image);
-          if (uploadResult.success) {
-            const baseUrl = request.nextUrl.origin;
-            imageUrl = `${baseUrl}${uploadResult.url}`;
+
+          if (uploadResult.success && uploadResult.url) {
+            mediaUrls.push(uploadResult.url);
+            console.log(`${isVideo ? 'Video' : 'Image'} uploaded to Cloudinary:`, uploadResult.url);
+            continue;
+          } else {
+            console.log(`Cloudinary ${isVideo ? 'video' : 'image'} upload failed, falling back to local storage`);
           }
         }
+
+        // Fallback to local storage
+        const localResult = isVideo 
+          ? await uploadVideoToLocal(file)
+          : await uploadImageToLocal(file);
+          
+        if (localResult.success && localResult.url) {
+          const baseUrl = request.nextUrl.origin;
+          mediaUrls.push(`${baseUrl}${localResult.url}`);
+          console.log(`${isVideo ? 'Video' : 'Image'} uploaded to local storage:`, localResult.url);
+        }
       } catch (uploadError) {
-        console.error('Error uploading image:', uploadError);
-        // Continue without image - image is optional for scheduled posts
+        console.error(`Error uploading ${file.name}:`, uploadError);
+        // Continue with other files - media is optional for scheduled posts
       }
     }
 
@@ -88,7 +127,8 @@ export async function POST(request: NextRequest) {
     const localDateTimeString = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
     
     // Forward to Java backend
-    const javaResponse = await fetch('http://localhost:8080/auth/api/scheduled-posts', {
+    const backendUrl = process.env.JAVA_BACKEND_URL || 'http://localhost:8080/auth';
+    const javaResponse = await fetch(`${backendUrl}/api/scheduled-posts`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${authToken}`,
@@ -98,7 +138,7 @@ export async function POST(request: NextRequest) {
         content,
         platforms: normalizedPlatforms,
         scheduledTime: localDateTimeString,
-        imageUrl: imageUrl || null,
+        mediaUrls: mediaUrls.length > 0 ? mediaUrls : null,
       }),
     });
 

@@ -2,7 +2,7 @@ package com.authservice.controller;
 
 import com.authservice.dto.CreateScheduledPostRequest;
 import com.authservice.dto.ScheduledPostResponse;
-import com.authservice.service.ScheduledPostService;
+import com.authservice.service.IScheduledPostService;
 import com.authservice.util.JwtUtil;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
@@ -24,7 +24,7 @@ import java.util.Optional;
 @CrossOrigin(origins = "*")
 public class ScheduledPostController {
 
-    private final ScheduledPostService scheduledPostService;
+    private final IScheduledPostService scheduledPostService;
     private final JwtUtil jwtUtil;
 
     /**

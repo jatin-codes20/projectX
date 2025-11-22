@@ -44,8 +44,8 @@ public class ScheduledPost {
     @Column(name = "scheduled_time", nullable = false)
     private LocalDateTime scheduledTime;
 
-    @Column(name = "image_url", columnDefinition = "TEXT")
-    private String imageUrl;
+    @Column(name = "media_urls", columnDefinition = "TEXT")
+    private String mediaUrlsJson; // Stored as JSON array: ["url1", "url2", ...]
 
     @Column(name = "retry_count")
     private Integer retryCount = 0;
@@ -105,6 +105,26 @@ public class ScheduledPost {
             this.platformsJson = objectMapper.writeValueAsString(platforms);
         } catch (Exception e) {
             this.platformsJson = "[]";
+        }
+    }
+
+    // Helper methods for mediaUrls JSON
+    public List<String> getMediaUrls() {
+        try {
+            if (mediaUrlsJson == null || mediaUrlsJson.isEmpty()) {
+                return new ArrayList<>();
+            }
+            return objectMapper.readValue(mediaUrlsJson, new TypeReference<List<String>>() {});
+        } catch (Exception e) {
+            return new ArrayList<>();
+        }
+    }
+
+    public void setMediaUrls(List<String> mediaUrls) {
+        try {
+            this.mediaUrlsJson = objectMapper.writeValueAsString(mediaUrls);
+        } catch (Exception e) {
+            this.mediaUrlsJson = "[]";
         }
     }
 }

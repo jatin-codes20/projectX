@@ -130,7 +130,11 @@ Guidelines:
 - When the user shares an idea or asks for content, generate a social media post
 - Keep posts under {platform_max_chars} characters
 - After generating a post, you can provide a brief explanation or ask if they want to refine it
-- If you generate a post, present it clearly - it can be anywhere in your response"""
+- IMPORTANT: When you generate a post, format it clearly using one of these methods:
+  * Put the post in double quotes: "Your post here"
+  * Put the post in a code block: ```Your post here```
+  * Or simply write the post directly if it's the main content
+- Make sure the post content is clearly distinguishable from any explanations you provide"""
 
         # Add account tone analysis if requested and previous posts are available
         if request.use_account_tone and request.previous_posts:
@@ -164,26 +168,103 @@ Guidelines:
         ai_message = result["choices"][0]["message"]["content"].strip()
         
         # Try to extract suggested post content from the AI's message
-        # Look for content that looks like a post (quotes, or content that fits post length)
+        # Look for content that looks like a post (quotes, markdown code blocks, or direct posts)
         suggested_content = None
         
-        # Check if message contains content that looks like a post (within character limits)
-        # Simple heuristic: if there's text in quotes or if message length suggests it's a post
-        if len(ai_message) <= platform_max_chars + 100:  # Allow some buffer for explanations
-            # Try to find quoted content first
+        # Strategy 1: Look for content in markdown code blocks (``` or `)
+        code_block_pattern = r'```(?:[a-z]+\n)?(.*?)```'
+        code_blocks = re.findall(code_block_pattern, ai_message, re.DOTALL)
+        if code_blocks:
+            for block in code_blocks:
+                block_content = block.strip()
+                if len(block_content) <= platform_max_chars and len(block_content) > 10:
+                    suggested_content = block_content
+                    break
+        
+        # Strategy 2: Look for content in inline code blocks (`content`)
+        if not suggested_content:
+            inline_code_pattern = r'`([^`]+)`'
+            inline_codes = re.findall(inline_code_pattern, ai_message)
+            if inline_codes:
+                # Use the longest code block that fits
+                for code in sorted(inline_codes, key=len, reverse=True):
+                    if len(code) <= platform_max_chars and len(code) > 10:
+                        suggested_content = code
+                        break
+        
+        # Strategy 3: Look for quoted content (double quotes)
+        if not suggested_content:
             quoted = re.findall(r'"([^"]+)"', ai_message)
             if quoted:
                 # Use the longest quoted text that fits
-                for quote in quoted:
-                    if len(quote) <= platform_max_chars:
+                for quote in sorted(quoted, key=len, reverse=True):
+                    if len(quote) <= platform_max_chars and len(quote) > 10:
                         suggested_content = quote
                         break
+        
+        # Strategy 4: Look for content after common prefixes like "Here's a post:", "Post:", etc.
+        if not suggested_content:
+            prefix_patterns = [
+                r"(?:Here'?s? (?:a |your )?post[:\-]?\s*)(.{10,280})",
+                r"(?:Post[:\-]?\s*)(.{10,280})",
+                r"(?:Tweet[:\-]?\s*)(.{10,280})",
+                r"(?:Content[:\-]?\s*)(.{10,280})",
+            ]
+            for pattern in prefix_patterns:
+                match = re.search(pattern, ai_message, re.IGNORECASE | re.DOTALL)
+                if match:
+                    candidate = match.group(1).strip()
+                    # Clean up - remove trailing punctuation that might be part of explanation
+                    candidate = re.sub(r'[\.!?]+$', '', candidate)
+                    # Take only the first sentence/segment that fits
+                    sentences = re.split(r'[.\n]', candidate)
+                    for sentence in sentences:
+                        sentence = sentence.strip()
+                        if len(sentence) <= platform_max_chars and len(sentence) > 10:
+                            suggested_content = sentence
+                            break
+                    if suggested_content:
+                        break
+        
+        # Strategy 5: If message is reasonable length and looks like a direct post
+        if not suggested_content and len(ai_message) <= platform_max_chars + 100:
+            # Check if it looks like a post (not just a question, explanation, or too short)
+            # Exclude messages that are clearly explanations or questions
+            is_explanation = any(phrase in ai_message.lower()[:50] for phrase in [
+                'here\'s', 'here is', 'i can', 'i\'ll', 'would you', 'do you want',
+                'let me', 'i\'ve', 'i have', 'you can', 'try this', 'how about',
+                'sure!', 'of course', 'absolutely'
+            ])
             
-            # If no quotes and message is reasonable length, might be a direct post
-            if not suggested_content and len(ai_message) <= platform_max_chars:
-                # Check if it looks like a post (not just a question or explanation)
-                if not ai_message.endswith('?') and len(ai_message) > 20:
-                    suggested_content = ai_message
+            if not ai_message.endswith('?') and len(ai_message) > 20 and not is_explanation:
+                suggested_content = ai_message
+        
+        # Strategy 6: Extract the first substantial sentence or paragraph that fits (as last resort)
+        if not suggested_content:
+            # Split by newlines first (paragraphs), then by periods
+            paragraphs = ai_message.split('\n')
+            for para in paragraphs:
+                para = para.strip()
+                if len(para) <= platform_max_chars and len(para) > 20:
+                    # Make sure it doesn't look like an explanation
+                    if not any(phrase in para.lower()[:30] for phrase in [
+                        'here\'s', 'here is', 'i can', 'let me', 'you can', 'sure!'
+                    ]) and not para.endswith('?'):
+                        suggested_content = para
+                        break
+            
+            # If still nothing, try sentences
+            if not suggested_content:
+                sentences = re.split(r'[.\n]', ai_message)
+                for sentence in sorted(sentences, key=len, reverse=True):
+                    sentence = sentence.strip()
+                    if len(sentence) <= platform_max_chars and len(sentence) > 20:
+                        # Make sure it doesn't look like an explanation
+                        if not any(phrase in sentence.lower()[:30] for phrase in [
+                            'here\'s', 'here is', 'i can', 'let me', 'you can'
+                        ]) and not sentence.endswith('?'):
+                            suggested_content = sentence
+                            break
         
         return ChatResponse(
             message=ai_message,

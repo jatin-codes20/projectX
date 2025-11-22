@@ -26,7 +26,8 @@ export async function GET(request: NextRequest) {
     console.log(`🔍 [SERVER] Calling Java API with limit=${limit}`);
 
     // Forward to Java backend
-    const javaResponse = await fetch(`http://localhost:8080/auth/api/posts/user/recent?limit=${limit}`, {
+    const backendUrl = process.env.JAVA_BACKEND_URL || 'http://localhost:8080/auth';
+    const javaResponse = await fetch(`${backendUrl}/api/posts/user/recent?limit=${limit}`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${authToken}`,

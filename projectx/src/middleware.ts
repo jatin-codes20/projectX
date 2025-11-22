@@ -5,7 +5,23 @@ import { cookies } from 'next/headers';
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Allow public access to landing page, connect page, and auth routes
+  // Check if user is authenticated
+  let isAuthenticated = false;
+  try {
+    const cookieStore = await cookies();
+    const authToken = cookieStore.get('auth-token')?.value;
+    isAuthenticated = !!authToken;
+  } catch (error) {
+    // If we can't check cookies, assume not authenticated
+    isAuthenticated = false;
+  }
+
+  // If user is logged in, redirect them away from login page (but allow connect page)
+  if (isAuthenticated && pathname === '/') {
+    return NextResponse.redirect(new URL('/connect', request.url));
+  }
+
+  // Allow public access to landing page, connect page, and auth routes (only if not authenticated)
   if (
     pathname === '/' ||
     pathname === '/connect' ||
@@ -31,7 +47,8 @@ export async function middleware(request: NextRequest) {
 
       // Check database for connected platforms using auth-token
       // Platform enum values: "x" for Twitter/X, "instagram" for Instagram
-      const javaResponse = await fetch('http://localhost:8080/auth/api/profiles/user', {
+      const backendUrl = process.env.JAVA_BACKEND_URL || 'http://localhost:8080/auth';
+      const javaResponse = await fetch(`${backendUrl}/api/profiles/user`, {
         headers: {
           'Authorization': `Bearer ${authToken}`,
           'Content-Type': 'application/json',
@@ -42,12 +59,11 @@ export async function middleware(request: NextRequest) {
         const data = await javaResponse.json();
         const profiles = data.profiles || [];
         
-        // Check using correct enum values: "x" and "instagram"
+        // Check for Twitter/X platform
         const hasTwitter = profiles.some((p: any) => p.platform === 'x');
-        const hasInstagram = profiles.some((p: any) => p.platform === 'instagram');
         
-        // Allow access if user has at least one platform connected
-        if (hasTwitter || hasInstagram) {
+        // Allow access if user has Twitter/X connected
+        if (hasTwitter) {
           return NextResponse.next();
         }
       }

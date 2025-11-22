@@ -17,7 +17,8 @@ export async function GET(request: NextRequest) {
     }
 
     // Forward request to Java API with the cookie
-    const javaResponse = await fetch('http://localhost:8080/auth/api/profiles/user', {
+    const backendUrl = process.env.JAVA_BACKEND_URL || 'http://localhost:8080/auth';
+    const javaResponse = await fetch(`${backendUrl}/api/profiles/user`, {
       headers: {
         'Authorization': `Bearer ${authToken}`,
         'Content-Type': 'application/json',
@@ -75,7 +76,8 @@ export async function POST(request: NextRequest) {
     console.log('🔍 API route POST - Body:', body);
 
     // Forward request to Java API with the cookie
-    const javaResponse = await fetch('http://localhost:8080/auth/api/profiles', {
+    const backendUrl = process.env.JAVA_BACKEND_URL || 'http://localhost:8080/auth';
+    const javaResponse = await fetch(`${backendUrl}/api/profiles`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${authToken}`,

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Calendar, momentLocalizer } from 'react-big-calendar';
 import moment from 'moment';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
+import MediaUploader from '@/components/MediaUploader';
 
 const localizer = momentLocalizer(moment);
 
@@ -13,7 +14,8 @@ interface ScheduledPost {
   content: string;
   platforms: string[];
   scheduledTime: string | Date; // Can be ISO string or Date
-  imageUrl?: string;
+  imageUrl?: string; // Legacy field
+  mediaUrls?: string[]; // Array of media URLs (images/videos)
   status: 'PENDING' | 'PROCESSING' | 'PUBLISHED' | 'FAILED' | 'pending' | 'published' | 'failed'; // Support both formats
   createdAt?: string | Date;
   updatedAt?: string | Date;
@@ -40,6 +42,9 @@ export default function ScheduledPostsPage() {
   const [editContent, setEditContent] = useState('');
   const [editScheduledTime, setEditScheduledTime] = useState('');
   const [editPlatforms, setEditPlatforms] = useState<string[]>([]);
+  const [editMediaUrls, setEditMediaUrls] = useState<string[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
+  const [selectedEvent, setSelectedEvent] = useState<any>(null);
 
   useEffect(() => {
     fetchScheduledPosts();
@@ -61,7 +66,8 @@ export default function ScheduledPostsPage() {
           platforms: post.platforms || [],
           status: (post.status || 'PENDING').toUpperCase(), // Normalize to uppercase
           scheduledTime: new Date(post.scheduledTime), // Convert to Date object
-          imageUrl: post.imageUrl,
+          imageUrl: post.imageUrl || (post.mediaUrls && post.mediaUrls.length > 0 ? post.mediaUrls[0] : undefined), // Legacy support
+          mediaUrls: post.mediaUrls || (post.imageUrl ? [post.imageUrl] : []), // Support both formats
           retryCount: post.retryCount || 0,
           maxRetries: post.maxRetries || 3,
           errorMessage: post.errorMessage,
@@ -115,13 +121,63 @@ export default function ScheduledPostsPage() {
   const startEdit = (post: ScheduledPost) => {
     setEditingPost(post);
     setEditContent(post.content);
-    setEditScheduledTime(new Date(post.scheduledTime).toISOString().slice(0, 16));
+    
+    // Properly handle date conversion to avoid timezone issues
+    // Convert scheduledTime to local datetime-local format
+    const scheduledDate = new Date(post.scheduledTime);
+    if (isNaN(scheduledDate.getTime())) {
+      console.error('Invalid scheduled time:', post.scheduledTime);
+      setMessage('Error: Invalid scheduled time');
+      return;
+    }
+    
+    // Format as YYYY-MM-DDTHH:mm for datetime-local input (local time, no timezone)
+    const year = scheduledDate.getFullYear();
+    const month = String(scheduledDate.getMonth() + 1).padStart(2, '0');
+    const day = String(scheduledDate.getDate()).padStart(2, '0');
+    const hours = String(scheduledDate.getHours()).padStart(2, '0');
+    const minutes = String(scheduledDate.getMinutes()).padStart(2, '0');
+    const localDateTimeString = `${year}-${month}-${day}T${hours}:${minutes}`;
+    
+    setEditScheduledTime(localDateTimeString);
     // Map backend platform names ('x') to UI platform names ('twitter')
     setEditPlatforms(post.platforms.map(p => (p === 'x' || p === 'twitter') ? 'twitter' : p));
+    // Set media URLs (support both mediaUrls array and legacy imageUrl)
+    setEditMediaUrls(post.mediaUrls || (post.imageUrl ? [post.imageUrl] : []));
+    setMessage(''); // Clear any previous messages
   };
 
   const saveEdit = async () => {
     if (!editingPost) return;
+
+    // Validation
+    if (!editContent.trim()) {
+      setMessage('Error: Content cannot be empty');
+      return;
+    }
+
+    if (editPlatforms.length === 0) {
+      setMessage('Error: Please select at least one platform');
+      return;
+    }
+
+    if (!editScheduledTime) {
+      setMessage('Error: Please select a scheduled time');
+      return;
+    }
+
+    // Validate scheduled time is in the future
+    const scheduledDate = new Date(editScheduledTime);
+    const now = new Date();
+    const minTime = new Date(now.getTime() + 5 * 60 * 1000); // 5 minutes from now
+
+    if (scheduledDate <= minTime) {
+      setMessage('Error: Scheduled time must be at least 5 minutes in the future');
+      return;
+    }
+
+    setIsSaving(true);
+    setMessage(''); // Clear previous messages
 
     try {
       const response = await fetch(`/api/schedule/${editingPost.id}`, {
@@ -134,22 +190,34 @@ export default function ScheduledPostsPage() {
           content: editContent,
           platforms: editPlatforms, // API route will handle conversion
           scheduledTime: editScheduledTime,
-          imageUrl: editingPost.imageUrl
+          mediaUrls: editMediaUrls.length > 0 ? editMediaUrls : undefined
         })
       });
       
       const data = await response.json();
       
-      if (data.success) {
-        setMessage('Scheduled post updated successfully');
+      if (response.ok && data.success) {
+        setMessage('✅ Scheduled post updated successfully');
         setEditingPost(null);
-        fetchScheduledPosts(); // Refresh the list
+        setEditContent('');
+        setEditScheduledTime('');
+        setEditPlatforms([]);
+        // Refresh the list after a short delay to show success message
+        setTimeout(() => {
+          fetchScheduledPosts();
+        }, 500);
       } else {
-        setMessage(data.error || 'Failed to update scheduled post');
+        // Handle different error formats
+        const errorMessage = data.message || data.error || 'Failed to update scheduled post';
+        setMessage(`❌ Error: ${errorMessage}`);
+        console.error('Update failed:', data);
       }
     } catch (error) {
       console.error('Error updating scheduled post:', error);
-      setMessage('Failed to update scheduled post');
+      const errorMessage = error instanceof Error ? error.message : 'Network error occurred';
+      setMessage(`❌ Error: ${errorMessage}`);
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -158,6 +226,8 @@ export default function ScheduledPostsPage() {
     setEditContent('');
     setEditScheduledTime('');
     setEditPlatforms([]);
+    setEditMediaUrls([]);
+    setMessage(''); // Clear any error messages
   };
 
   const getEventStyle = (event: any) => {
@@ -166,12 +236,10 @@ export default function ScheduledPostsPage() {
     
     // Check for both 'x' and 'twitter' for compatibility
     const hasX = post.platforms.includes('x') || post.platforms.includes('twitter');
-    const hasInstagram = post.platforms.includes('instagram');
     
-    if (hasInstagram && hasX) {
-      backgroundColor = '#8b5cf6'; // Purple for both
-    } else if (hasInstagram) {
-      backgroundColor = '#ec4899'; // Pink for Instagram
+    // Only X/Twitter is supported now
+    if (hasX) {
+      backgroundColor = '#1DA1F2'; // Twitter blue
     }
     
     const normalizedStatus = post.status.toUpperCase();
@@ -256,7 +324,7 @@ export default function ScheduledPostsPage() {
   };
 
   const getPlatformIcon = (platform: string) => {
-    return (platform === 'twitter' || platform === 'x') ? '𝕏' : '📷';
+    return '𝕏'; // Only X/Twitter is supported
   };
 
   if (isLoading) {
@@ -360,7 +428,92 @@ export default function ScheduledPostsPage() {
               views={['month', 'week', 'day']}
               defaultView="month"
               popup
+              onSelectEvent={(event) => {
+                const post = event.post as ScheduledPost;
+                setSelectedEvent(event);
+                // Only allow edit/delete for pending posts
+                if (post.status.toUpperCase() === 'PENDING' || post.status === 'pending') {
+                  // Show action menu
+                }
+              }}
             />
+          </div>
+        )}
+
+        {/* Calendar Event Action Menu */}
+        {selectedEvent && view === 'calendar' && (
+          <div 
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+            onClick={() => setSelectedEvent(null)}
+          >
+            <div 
+              className="bg-white rounded-lg p-6 w-full max-w-md mx-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-lg font-semibold mb-4">Post Actions</h3>
+              
+              {(() => {
+                const post = selectedEvent.post as ScheduledPost;
+                return (
+                  <>
+                    <div className="mb-4">
+                      <p className="text-sm text-gray-600 mb-2">Content:</p>
+                      <p className="text-gray-900 line-clamp-3">{post.content}</p>
+                    </div>
+                    
+                    <div className="mb-4">
+                      <p className="text-sm text-gray-600 mb-2">Scheduled Time:</p>
+                      <p className="text-gray-900">{formatDate(post.scheduledTime)}</p>
+                    </div>
+                    
+                    <div className="mb-4">
+                      <p className="text-sm text-gray-600 mb-2">Status:</p>
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(post.status)}`}>
+                        {post.status}
+                      </span>
+                    </div>
+
+                    {(post.status.toUpperCase() === 'PENDING' || post.status === 'pending') ? (
+                      <div className="flex space-x-3">
+                        <button
+                          onClick={() => {
+                            startEdit(post);
+                            setSelectedEvent(null);
+                          }}
+                          className="flex-1 bg-blue-500 text-white py-2 px-4 rounded-md hover:bg-blue-600 transition-colors"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => {
+                            deletePost(post.id);
+                            setSelectedEvent(null);
+                          }}
+                          className="flex-1 bg-red-500 text-white py-2 px-4 rounded-md hover:bg-red-600 transition-colors"
+                        >
+                          Delete
+                        </button>
+                        <button
+                          onClick={() => setSelectedEvent(null)}
+                          className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-md hover:bg-gray-400 transition-colors"
+                        >
+                          Close
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex space-x-3">
+                        <button
+                          onClick={() => setSelectedEvent(null)}
+                          className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-md hover:bg-gray-400 transition-colors"
+                        >
+                          Close
+                        </button>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
           </div>
         )}
 
@@ -426,7 +579,7 @@ export default function ScheduledPostsPage() {
         {/* Edit Modal */}
         {editingPost && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+            <div className="bg-white rounded-lg p-6 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
               <h3 className="text-lg font-semibold mb-4">Edit Scheduled Post</h3>
               
               <div className="mb-4">
@@ -446,23 +599,21 @@ export default function ScheduledPostsPage() {
                   Platforms
                 </label>
                 <div className="space-y-2">
-                  {['twitter', 'instagram'].map((platform) => (
-                    <label key={platform} className="flex items-center">
-                      <input
-                        type="checkbox"
-                        checked={editPlatforms.includes(platform)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setEditPlatforms([...editPlatforms, platform]);
-                          } else {
-                            setEditPlatforms(editPlatforms.filter(p => p !== platform));
-                          }
-                        }}
-                        className="mr-2"
-                      />
-                      <span className="text-sm">{platform === 'twitter' ? 'X (Twitter)' : 'Instagram'}</span>
-                    </label>
-                  ))}
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={editPlatforms.includes('twitter')}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setEditPlatforms([...editPlatforms, 'twitter']);
+                        } else {
+                          setEditPlatforms(editPlatforms.filter(p => p !== 'twitter'));
+                        }
+                      }}
+                      className="mr-2"
+                    />
+                    <span className="text-sm">X (Twitter)</span>
+                  </label>
                 </div>
               </div>
 
@@ -479,16 +630,41 @@ export default function ScheduledPostsPage() {
                 />
               </div>
 
+              {/* Media Upload Section */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Media (Images/Videos)
+                </label>
+                <MediaUploader
+                  existingUrls={editMediaUrls}
+                  onUrlsChange={setEditMediaUrls}
+                  maxFiles={4}
+                />
+              </div>
+
+              {/* Error/Success Message in Modal */}
+              {message && (
+                <div className={`mb-4 p-3 rounded-md text-sm ${
+                  message.includes('✅') || message.includes('success')
+                    ? 'bg-green-50 text-green-800 border border-green-200'
+                    : 'bg-red-50 text-red-800 border border-red-200'
+                }`}>
+                  {message}
+                </div>
+              )}
+
               <div className="flex space-x-3">
                 <button
                   onClick={saveEdit}
-                  className="flex-1 bg-blue-500 text-white py-2 px-4 rounded-md hover:bg-blue-600 transition-colors"
+                  disabled={isSaving}
+                  className="flex-1 bg-blue-500 text-white py-2 px-4 rounded-md hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Save Changes
+                  {isSaving ? 'Saving...' : 'Save Changes'}
                 </button>
                 <button
                   onClick={cancelEdit}
-                  className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-md hover:bg-gray-400 transition-colors"
+                  disabled={isSaving}
+                  className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-md hover:bg-gray-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Cancel
                 </button>

@@ -18,7 +18,8 @@ export async function GET(request: NextRequest) {
     }
 
     // Forward to Java backend
-    const javaResponse = await fetch('http://localhost:8080/auth/api/scheduled-posts', {
+    const backendUrl = process.env.JAVA_BACKEND_URL || 'http://localhost:8080/auth';
+    const javaResponse = await fetch(`${backendUrl}/api/scheduled-posts`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${authToken}`,

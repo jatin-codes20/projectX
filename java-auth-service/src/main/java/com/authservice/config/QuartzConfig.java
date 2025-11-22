@@ -4,7 +4,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.quartz.Scheduler;
 import org.quartz.SchedulerException;
 import org.quartz.utils.ConnectionProvider;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.DependsOn;
@@ -13,13 +12,18 @@ import org.springframework.scheduling.quartz.SchedulerFactoryBean;
 import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.Properties;
+
+import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.quartz.QuartzProperties;
 
 @Configuration
 @Slf4j
+@RequiredArgsConstructor
 public class QuartzConfig {
 
-    @Autowired
-    private DataSource dataSource;
+    private final DataSource dataSource;
+    private final QuartzProperties quartzProperties;
 
     @Bean
     @DependsOn("dataSource")
@@ -50,37 +54,18 @@ public class QuartzConfig {
         );
         
         SchedulerFactoryBean factory = new SchedulerFactoryBean();
+        if (quartzProperties.getSchedulerName() != null) {
+            factory.setSchedulerName(quartzProperties.getSchedulerName());
+        }
         factory.setDataSource(dataSource);
         factory.setJobFactory(new org.springframework.scheduling.quartz.SpringBeanJobFactory());
-        
-        // Quartz properties
-        java.util.Properties props = new java.util.Properties();
-        props.put("org.quartz.scheduler.instanceName", "ScheduledPostScheduler");
-        props.put("org.quartz.scheduler.instanceId", "AUTO");
-        
-        // Job store configuration (JDBC for persistence)
-        props.put("org.quartz.jobStore.class", "org.quartz.impl.jdbcjobstore.JobStoreTX");
-        props.put("org.quartz.jobStore.driverDelegateClass", "org.quartz.impl.jdbcjobstore.PostgreSQLDelegate");
-        props.put("org.quartz.jobStore.tablePrefix", "QRTZ_");
-        props.put("org.quartz.jobStore.useProperties", "false");
-        props.put("org.quartz.jobStore.dataSource", "quartzDataSource");
-        
-        // Clustering configuration
-        props.put("org.quartz.jobStore.isClustered", "true");
-        props.put("org.quartz.jobStore.clusterCheckinInterval", "20000");
-        
-        // Thread pool configuration
-        props.put("org.quartz.threadPool.class", "org.quartz.simpl.SimpleThreadPool");
-        props.put("org.quartz.threadPool.threadCount", "10");
-        props.put("org.quartz.threadPool.threadPriority", "5");
-        
-        // Misfire handling
-        props.put("org.quartz.jobStore.misfireThreshold", "60000");
-        
-        factory.setQuartzProperties(props);
-        factory.setWaitForJobsToCompleteOnShutdown(true);
-        factory.setOverwriteExistingJobs(false);
-        factory.setStartupDelay(5); // Small delay to ensure everything is initialized
+        factory.setQuartzProperties(loadQuartzProperties());
+        factory.setWaitForJobsToCompleteOnShutdown(quartzProperties.isWaitForJobsToCompleteOnShutdown());
+        factory.setOverwriteExistingJobs(quartzProperties.isOverwriteExistingJobs());
+        factory.setAutoStartup(quartzProperties.isAutoStartup());
+        if (quartzProperties.getStartupDelay() != null) {
+            factory.setStartupDelay((int) quartzProperties.getStartupDelay().getSeconds());
+        }
         
         log.info("Quartz Scheduler configured with JDBC JobStore");
         log.info("DataSource: {}", dataSource.getClass().getName());
@@ -94,6 +79,15 @@ public class QuartzConfig {
         scheduler.start();
         log.info("Quartz Scheduler started successfully");
         return scheduler;
+    }
+
+    private Properties loadQuartzProperties() {
+        Properties properties = new Properties();
+        properties.putAll(quartzProperties.getProperties());
+        if (properties.isEmpty()) {
+            log.warn("No Quartz properties detected under 'spring.quartz.properties'. Using defaults.");
+        }
+        return properties;
     }
 }
 

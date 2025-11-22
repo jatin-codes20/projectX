@@ -21,7 +21,8 @@ export async function GET(
     }
 
     // Forward request to Java API with the cookie
-    const javaResponse = await fetch(`http://localhost:8080/auth/api/profiles/user/platform/${params.platform}`, {
+    const backendUrl = process.env.JAVA_BACKEND_URL || 'http://localhost:8080/auth';
+    const javaResponse = await fetch(`${backendUrl}/api/profiles/user/platform/${params.platform}`, {
       headers: {
         'Authorization': `Bearer ${authToken}`,
         'Content-Type': 'application/json',
@@ -71,7 +72,8 @@ export async function DELETE(
     }
 
     // Forward request to Java API with the cookie
-    const javaResponse = await fetch(`http://localhost:8080/auth/api/profiles/user/platform/${params.platform}`, {
+    const backendUrl = process.env.JAVA_BACKEND_URL || 'http://localhost:8080/auth';
+    const javaResponse = await fetch(`${backendUrl}/api/profiles/user/platform/${params.platform}`, {
       method: 'DELETE',
       headers: {
         'Authorization': `Bearer ${authToken}`,

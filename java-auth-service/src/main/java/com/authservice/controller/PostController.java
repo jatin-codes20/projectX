@@ -5,7 +5,7 @@ import com.authservice.dto.ImmediatePostRequest;
 import com.authservice.entity.Post;
 import com.authservice.entity.Profile;
 import com.authservice.service.MetricsService;
-import com.authservice.service.PostExecutionService;
+import com.authservice.service.IPostExecutionService;
 import com.authservice.service.PostService;
 import com.authservice.service.ProfileService;
 import com.authservice.util.JwtUtil;
@@ -33,7 +33,7 @@ public class PostController {
 
     private final PostService postService;
     private final ProfileService profileService;
-    private final PostExecutionService postExecutionService;
+    private final IPostExecutionService postExecutionService;
     private final MetricsService metricsService;
     private final JwtUtil jwtUtil;
 
@@ -139,7 +139,7 @@ public class PostController {
             }
 
             log.info("Posting immediately to {} for user ID: {}", request.getPlatform(), userId);
-            log.info("Content: {}, ImageUrl: {}", request.getContent(), request.getImageUrl() != null ? request.getImageUrl() : "null");
+            log.info("Content: {}, MediaUrls count: {}", request.getContent(), request.getMediaUrls() != null ? request.getMediaUrls().size() : 0);
 
             // Find the profile
             Optional<Profile> profileOpt = profileService.getProfileById(request.getProfileId());
@@ -172,12 +172,12 @@ public class PostController {
             // Post to platform using PostExecutionService
             String platformPostId;
             try {
-                log.info("Calling postToPlatformImmediate with content length: {}, imageUrl: {}", 
+                log.info("Calling postToPlatformImmediate with content length: {}, mediaUrls count: {}", 
                         request.getContent() != null ? request.getContent().length() : 0,
-                        request.getImageUrl() != null ? request.getImageUrl() : "null");
+                        request.getMediaUrls() != null ? request.getMediaUrls().size() : 0);
                 platformPostId = postExecutionService.postToPlatformImmediate(
                         request.getContent(),
-                        request.getImageUrl(),
+                        request.getMediaUrls(),
                         profile,
                         platform
                 );
@@ -196,6 +196,7 @@ public class PostController {
             post.setContent(request.getContent());
             post.setProfile(profile);
             post.setCreatedAt(LocalDateTime.now());
+            post.setMediaUrls(request.getMediaUrls()); // Save media URLs
             Post createdPost = postService.createPost(post);
             log.info("Successfully created post with ID: {}", createdPost.getId());
 

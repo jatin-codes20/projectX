@@ -19,7 +19,7 @@ public class ScheduledPostResponse {
     private List<String> platforms;
     private PostStatus status;
     private LocalDateTime scheduledTime;
-    private String imageUrl;
+    private List<String> mediaUrls;
     private Integer retryCount;
     private Integer maxRetries;
     private String errorMessage;

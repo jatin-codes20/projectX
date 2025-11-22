@@ -14,7 +14,6 @@ import org.quartz.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.Date;
 import java.util.List;
@@ -25,7 +24,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Slf4j
 @Transactional
-public class ScheduledPostService {
+public class ScheduledPostService implements IScheduledPostService {
 
     private final ScheduledPostRepository scheduledPostRepository;
     private final UserRepository userRepository;
@@ -34,6 +33,7 @@ public class ScheduledPostService {
     /**
      * Create a new scheduled post and schedule Quartz job
      */
+    @Override
     public ScheduledPostResponse createScheduledPost(Long userId, CreateScheduledPostRequest request) {
         log.info("Creating scheduled post for user {} with scheduled time {}", userId, request.getScheduledTime());
 
@@ -47,7 +47,7 @@ public class ScheduledPostService {
         scheduledPost.setContent(request.getContent());
         scheduledPost.setPlatforms(request.getPlatforms());
         scheduledPost.setScheduledTime(request.getScheduledTime());
-        scheduledPost.setImageUrl(request.getImageUrl());
+        scheduledPost.setMediaUrls(request.getMediaUrls());
         scheduledPost.setStatus(PostStatus.PENDING);
 
         // Save to database
@@ -97,6 +97,7 @@ public class ScheduledPostService {
     /**
      * Get all scheduled posts for a user
      */
+    @Override
     @Transactional(readOnly = true)
     public List<ScheduledPostResponse> getScheduledPosts(Long userId) {
         List<ScheduledPost> posts = scheduledPostRepository.findByUserId(userId);
@@ -108,6 +109,7 @@ public class ScheduledPostService {
     /**
      * Get scheduled post by ID and user ID (for authorization)
      */
+    @Override
     @Transactional(readOnly = true)
     public Optional<ScheduledPostResponse> getScheduledPost(Long id, Long userId) {
         return scheduledPostRepository.findByIdAndUserId(id, userId)
@@ -117,6 +119,7 @@ public class ScheduledPostService {
     /**
      * Update scheduled post
      */
+    @Override
     public ScheduledPostResponse updateScheduledPost(Long id, Long userId, CreateScheduledPostRequest request) {
         log.info("Updating scheduled post ID: {} for user {}", id, userId);
 
@@ -134,7 +137,7 @@ public class ScheduledPostService {
         
         boolean timeChanged = !scheduledPost.getScheduledTime().equals(request.getScheduledTime());
         scheduledPost.setScheduledTime(request.getScheduledTime());
-        scheduledPost.setImageUrl(request.getImageUrl());
+        scheduledPost.setMediaUrls(request.getMediaUrls());
 
         ScheduledPost savedPost = scheduledPostRepository.save(scheduledPost);
 
@@ -151,6 +154,7 @@ public class ScheduledPostService {
     /**
      * Delete scheduled post and Quartz job
      */
+    @Override
     public void deleteScheduledPost(Long id, Long userId) {
         log.info("Deleting scheduled post ID: {} for user {}", id, userId);
 
@@ -196,7 +200,7 @@ public class ScheduledPostService {
         response.setPlatforms(scheduledPost.getPlatforms());
         response.setStatus(scheduledPost.getStatus());
         response.setScheduledTime(scheduledPost.getScheduledTime());
-        response.setImageUrl(scheduledPost.getImageUrl());
+        response.setMediaUrls(scheduledPost.getMediaUrls());
         response.setRetryCount(scheduledPost.getRetryCount());
         response.setMaxRetries(scheduledPost.getMaxRetries());
         response.setErrorMessage(scheduledPost.getErrorMessage());
@@ -208,6 +212,7 @@ public class ScheduledPostService {
     /**
      * Manual trigger for testing (reschedule job to execute immediately)
      */
+    @Override
     public void triggerScheduledPost(Long id, Long userId) {
         log.info("Manually triggering scheduled post ID: {} for user {}", id, userId);
 

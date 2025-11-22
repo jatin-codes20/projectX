@@ -17,7 +17,8 @@ export async function GET(request: NextRequest) {
     }
 
     // Forward request to Java API with the cookie
-    const javaResponse = await fetch('http://localhost:8080/auth/api/profiles/user/count', {
+    const backendUrl = process.env.JAVA_BACKEND_URL || 'http://localhost:8080/auth';
+    const javaResponse = await fetch(`${backendUrl}/api/profiles/user/count`, {
       headers: {
         'Authorization': `Bearer ${authToken}`,
         'Content-Type': 'application/json',

@@ -24,7 +24,7 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-        log.info("Configuring SecurityFilterChain with OAuth2 login");
+       
         http
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .csrf(csrf -> csrf.disable())
@@ -43,7 +43,7 @@ public class SecurityConfig {
                 .anyRequest().authenticated()
             )
             .oauth2Login(oauth2 -> {
-                log.info("Configuring OAuth2 login with Google");
+              
                 oauth2
                     .loginPage("/oauth2/authorization/google")
                     .defaultSuccessUrl("/api/auth/success", true)

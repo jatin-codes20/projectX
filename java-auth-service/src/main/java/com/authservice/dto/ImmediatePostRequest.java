@@ -6,6 +6,8 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -16,7 +18,7 @@ public class ImmediatePostRequest {
     @NotNull(message = "Profile ID cannot be null")
     private Long profileId;
 
-    private String imageUrl; // Optional for Twitter, required for Instagram
+    private List<String> mediaUrls; // Optional: array of media URLs (images and/or videos)
 
     @NotBlank(message = "Platform cannot be blank")
     private String platform; // "x", "twitter", "instagram"

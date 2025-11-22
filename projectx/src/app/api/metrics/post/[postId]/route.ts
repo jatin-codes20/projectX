@@ -25,7 +25,8 @@ export async function POST(
     console.log('🔍 API route POST metrics - Body:', body);
 
     // Forward request to Java API with the cookie
-    const javaResponse = await fetch(`http://localhost:8080/auth/api/metrics/post/${params.postId}`, {
+    const backendUrl = process.env.JAVA_BACKEND_URL || 'http://localhost:8080/auth';
+    const javaResponse = await fetch(`${backendUrl}/api/metrics/post/${params.postId}`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${authToken}`,
